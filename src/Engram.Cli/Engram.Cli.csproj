@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Engram.Cli</RootNamespace>
+    <AssemblyName>engram</AssemblyName>
+
+    <!-- AOT/trim/single-file analyzers on every build, so AOT problems fail the normal build. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+  </PropertyGroup>
+
+  <!--
+    On the hook hot path: Native AOT for fast cold start. AOT publish always needs a RID
+    (dotnet publish -r win-x64 / linux-x64), so PublishAot is applied when one is given.
+
+    SDK 10.0.402 bundles AOT compiler/runtime packs 10.0.13, which are affected by
+    CVE-2026-111497 (GHSA-p3jp-9v83-76w9, Brotli out-of-bounds write; fixed in 10.0.14).
+    AOT compiles the runtime into engram.exe, so publish against the patched 10.0.15 packs.
+    Keeping PublishAot RID-conditional also stops plain `dotnet build` from restoring the
+    vulnerable 10.0.13 ILCompiler package. Remove RuntimeFrameworkVersion once global.json
+    moves to SDK >= 10.0.403.
+  -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <RuntimeFrameworkVersion>10.0.15</RuntimeFrameworkVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Engram.Core\Engram.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Engram.Tests" />
+  </ItemGroup>
+</Project>

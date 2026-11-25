@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Engram.Worker</RootNamespace>
+    <AssemblyName>engram-worker</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Engram.Core\Engram.Core.csproj" />
+  </ItemGroup>
+</Project>
