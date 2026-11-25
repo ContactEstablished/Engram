@@ -68,11 +68,23 @@ pwsh spike/measure-coldstart.ps1                         # AOT cold-start timing
 
 - `ENGRAM_HOME` overrides the data folder (default `%USERPROFILE%\.engram` / `~/.engram`). Tests always set it.
 - Hook handlers take their I/O (stdin, stdout, environment, clock) as parameters so they can be tested in-process.
+- Read hook stdin as **raw UTF-8 bytes** (`Console.OpenStandardInput()`), never `Console.In`: on Windows,
+  `Console.In` decodes with the console code page and mangles non-ASCII. Write SessionStart context the same way.
+- Several hooks fire in parallel. Shared files are appended under a cross-process named mutex (`SafeFile.Append`).
 - Keep the CLI dependency-free; it is on the hook hot path and is AOT-compiled.
+- Tests run on Microsoft.Testing.Platform (`global.json` → `test.runner`). Use `TestContext.Current.CancellationToken`.
+- Stage files explicitly when committing; don't use `git add -A`.
 
 ## Current phase
 
-**Phase 0 — spike: capture real hook payloads.** The tooling is built. The next step is the manual run in
-`spike/README.md` on Windows and WSL. Then generate fixtures and fill in `docs/phase0-findings.md`.
+**Phase 0 — spike: capture real hook payloads. Tooling complete; waiting on the manual run.**
+
+Built: `engram spike capture | listen | fixtures`, `spike/settings.local.json`, the run book
+(`spike/README.md`), `spike/measure-coldstart.ps1` (AOT numbers in `docs/phase0-findings.md` §5a), and
+contract tests over `tests/fixtures/hooks` and `tests/fixtures/hooks-synthetic`.
+
+Next (user): run `spike/README.md` on Windows and WSL, run `engram spike fixtures`, commit the reviewed
+fixtures, and fill in `docs/phase0-findings.md`, including the decisions in its §11 gate.
+
 **Do not start Phase 1** (worker logic, SQLite schema, observer, MCP) until the user has reviewed the
 Phase 0 gate.
