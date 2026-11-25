@@ -1,0 +1,80 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 },
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:47613/hooks/tool",
+            "timeout": 5,
+            "headers": {
+              "Authorization": "Bearer $ENGRAM_TOKEN",
+              "X-Engram-Disable": "${ENGRAM_DISABLE}",
+              "X-Engram-Unlisted": "$ENGRAM_UNLISTED"
+            },
+            "allowedEnvVars": ["ENGRAM_TOKEN", "ENGRAM_DISABLE"]
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "engram", "args": ["spike", "capture"], "timeout": 10 }]
+      }
+    ]
+  }
+}

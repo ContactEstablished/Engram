@@ -62,9 +62,10 @@ public sealed class SpikeFixturesCommandTests : IDisposable
         var text = report.ToString();
         text.ShouldContain("## PostToolUse");
         text.ShouldContain("tool Bash (2)");
-        text.ShouldContain("sources: startup ×2; compact ×1");
+        text.ShouldContain("sources: startup x2; compact x1");
         text.ShouldContain("(WSL)");
-        text.ShouldContain("authorization.matches_env: True ×1");
+        text.ShouldContain("authorization.matches_env: True x1");
+        FixtureSanitizer.FindLeaks(text).ShouldBeEmpty("the report may be pasted into docs");
     }
 
     [Fact]

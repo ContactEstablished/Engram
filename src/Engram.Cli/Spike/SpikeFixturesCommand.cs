@@ -67,7 +67,7 @@ internal static class SpikeFixturesCommand
             File.AppendAllText(path, "\n");
         }
 
-        WriteReport(report, options, records, selected);
+        WriteReport(report, options, records, selected, sanitizer);
         return 0;
     }
 
@@ -232,7 +232,7 @@ internal static class SpikeFixturesCommand
         }
     }
 
-    private static void WriteReport(TextWriter w, Options options, List<Captured> all, List<Captured> selected)
+    private static void WriteReport(TextWriter w, Options options, List<Captured> all, List<Captured> selected, FixtureSanitizer sanitizer)
     {
         var sources = options.From.Select((dir, i) => (dir, i)).ToList();
         w.WriteLine($"# Phase 0 capture report ({DateTimeOffset.Now:yyyy-MM-dd HH:mm})");
@@ -241,11 +241,11 @@ internal static class SpikeFixturesCommand
         {
             var mine = all.Where(r => r.SourceIndex == i).ToList();
             var os = mine.Select(r => Str(r.Wrapper, "os") + (Bool(r.Wrapper, "is_wsl") ? " (WSL)" : "")).Distinct();
-            w.WriteLine($"- source {i}: {dir} — {mine.Count} records, os: {string.Join(", ", os)}");
+            w.WriteLine($"- source {i}: {sanitizer.SanitizeString(dir)}: {mine.Count} records, os: {string.Join(", ", os)}");
         }
 
         w.WriteLine();
-        w.WriteLine($"Wrote {selected.Count} fixtures to {options.Out}:");
+        w.WriteLine($"Wrote {selected.Count} fixtures to {sanitizer.SanitizeString(options.Out)}:");
         foreach (var r in selected)
         {
             w.WriteLine($"  {r.Key}.json  (from source {r.SourceIndex})");
@@ -305,7 +305,7 @@ internal static class SpikeFixturesCommand
             }
         }
 
-        WriteHttpSummary(w, options.From);
+        WriteHttpSummary(w, options.From, sanitizer);
     }
 
     private static void WriteTimings(TextWriter w, IEnumerable<Captured> group)
@@ -321,7 +321,7 @@ internal static class SpikeFixturesCommand
         }
     }
 
-    private static void WriteHttpSummary(TextWriter w, IReadOnlyList<string> dirs)
+    private static void WriteHttpSummary(TextWriter w, IReadOnlyList<string> dirs, FixtureSanitizer sanitizer)
     {
         w.WriteLine();
         w.WriteLine("## HTTP hook requests (spike listen)");
@@ -334,7 +334,7 @@ internal static class SpikeFixturesCommand
                 var lines = File.ReadLines(file).Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => JsonDocument.Parse(l).RootElement.Clone()).ToList();
                 var matches = Counts(lines.Select(l => l.TryGetProperty("authorization", out var a) && a.TryGetProperty("matches_env", out var m) ? m.ToString() : "?"));
                 var headerNames = lines.SelectMany(l => l.TryGetProperty("headers", out var h) ? h.EnumerateObject().Select(p => p.Name) : []).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase);
-                w.WriteLine($"- {file}: {lines.Count} requests; authorization.matches_env: {matches}");
+                w.WriteLine($"- {sanitizer.SanitizeString(file)}: {lines.Count} requests; authorization.matches_env: {matches}");
                 w.WriteLine($"  headers seen: {string.Join(", ", headerNames)}");
                 w.WriteLine($"  X-Engram-Disable values: {Counts(lines.Select(l => HeaderValue(l, "X-Engram-Disable")))}");
                 w.WriteLine($"  X-Engram-Unlisted values: {Counts(lines.Select(l => HeaderValue(l, "X-Engram-Unlisted")))}");
@@ -391,7 +391,7 @@ internal static class SpikeFixturesCommand
     };
 
     private static string Counts(IEnumerable<string> values) =>
-        string.Join("; ", values.GroupBy(v => v).OrderByDescending(g => g.Count()).Select(g => $"{g.Key} ×{g.Count()}"));
+        string.Join("; ", values.GroupBy(v => v).OrderByDescending(g => g.Count()).Select(g => $"{g.Key} x{g.Count()}"));
 
     private static string P(List<double> sorted, double q) =>
         sorted.Count == 0 ? "-" : sorted[Math.Clamp((int)Math.Ceiling(q * sorted.Count) - 1, 0, sorted.Count - 1)].ToString("0.#", CultureInfo.InvariantCulture);
