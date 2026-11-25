@@ -41,6 +41,7 @@ internal static class Program
             return args switch
             {
                 ["spike", "listen", .. var rest] => SpikeListenCommand.Run(rest),
+                ["spike", "fixtures", .. var rest] => SpikeFixturesCommand.Run(rest),
                 ["--version"] => PrintVersion(),
                 ["--help"] or ["-h"] or ["help"] => PrintUsage(Console.Out, 0),
                 _ => PrintUsage(Console.Error, 1),

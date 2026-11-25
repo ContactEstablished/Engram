@@ -43,13 +43,24 @@ public sealed class SpikeListenerTests : IAsyncDisposable
     private async Task<JsonElement> ReadSingleRecordAsync(string file)
     {
         var path = Path.Combine(SpikeDir, file);
-        // The listener answers first and logs afterwards, so wait briefly for the line.
-        for (var i = 0; i < 100 && !File.Exists(path); i++)
+        // The listener answers first and logs afterwards, so wait for a complete line. Share with the writer.
+        var text = "";
+        for (var i = 0; i < 100 && !text.EndsWith('\n'); i++)
         {
-            await Task.Delay(20, TestContext.Current.CancellationToken);
+            if (File.Exists(path))
+            {
+                await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream);
+                text = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+            }
+
+            if (!text.EndsWith('\n'))
+            {
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+            }
         }
 
-        var lines = await File.ReadAllLinesAsync(path, TestContext.Current.CancellationToken);
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         lines.Length.ShouldBe(1);
         return JsonDocument.Parse(lines[0]).RootElement.Clone();
     }

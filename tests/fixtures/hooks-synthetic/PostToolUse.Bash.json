@@ -1,0 +1,13 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "<HOME>/.claude/projects/sandbox/00000000-0000-4000-8000-000000000001.jsonl",
+  "cwd": "<HOME>/src/engram-sandbox",
+  "permission_mode": "default",
+  "prompt_id": "prompt-1",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": { "command": "npm test", "description": "Run test suite" },
+  "tool_response": { "stdout": "12 passing", "stderr": "", "interrupted": false, "isImage": false },
+  "tool_use_id": "toolu_01ABC123",
+  "duration_ms": 2310
+}
