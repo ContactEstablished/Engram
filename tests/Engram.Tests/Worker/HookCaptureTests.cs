@@ -137,7 +137,8 @@ public sealed class HookCaptureTests : IDisposable
         var bash = _factory.Query<(string Input, string Response)>("SELECT tool_input, tool_response FROM events WHERE tool_use_id = 't1'").ShouldHaveSingleItem();
         bash.Input.ShouldContain("Bearer <REDACTED>");
         bash.Response.Length.ShouldBeLessThan(4300);
-        bash.Response.ShouldContain("…<truncated 5904 chars>");
+        bash.Response.ShouldContain("xxxx…<truncated");
+        bash.Response.ShouldContain("chars>…xxxx");
 
         var edit = _factory.Query<string>("SELECT tool_response FROM events WHERE tool_use_id = 't2'").ShouldHaveSingleItem();
         edit.ShouldNotContain("WHOLE FILE");

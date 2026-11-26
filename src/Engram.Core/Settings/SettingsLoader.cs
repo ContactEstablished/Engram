@@ -67,6 +67,30 @@ public static class SettingsLoader
             capture = capture with { MaxStringBytes = 256 };
         }
 
+        if (capture.MaxPromptBytes < capture.MaxStringBytes)
+        {
+            warnings.Add("capture.maxPromptBytes is below capture.maxStringBytes; using maxStringBytes.");
+            capture = capture with { MaxPromptBytes = capture.MaxStringBytes };
+        }
+
+        var observer = s.Observer;
+        var provider = observer.Provider?.Trim().ToLowerInvariant();
+        if (provider is not (ObserverSettings.ClaudeCli or ObserverSettings.Ollama or ObserverSettings.None))
+        {
+            warnings.Add($"observer.provider '{observer.Provider}' is not one of claude-cli, ollama, none; using claude-cli.");
+            provider = ObserverSettings.ClaudeCli;
+        }
+
+        observer = observer with
+        {
+            Provider = provider,
+            Model = string.IsNullOrWhiteSpace(observer.Model) ? new ObserverSettings().Model : observer.Model,
+            MaxCallsPerHour = Math.Max(1, observer.MaxCallsPerHour),
+            TimeoutSeconds = Math.Max(10, observer.TimeoutSeconds),
+            MaxInputChars = Math.Max(2000, observer.MaxInputChars),
+            OllamaOptions = observer.OllamaOptions ?? new OllamaSettings(),
+        };
+
         var worker = s.Worker;
         if (worker.Port is <= 0 or >= 65536)
         {
@@ -83,6 +107,6 @@ public static class SettingsLoader
             ExcludePaths = capture.ExcludePaths ?? defaults.ExcludePaths,
             RedactPatterns = capture.RedactPatterns ?? defaults.RedactPatterns,
         };
-        return s with { Capture = capture, Worker = worker };
+        return s with { Capture = capture, Worker = worker, Observer = observer };
     }
 }
