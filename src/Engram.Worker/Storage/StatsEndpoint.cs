@@ -15,7 +15,7 @@ internal static class StatsEndpoint
 
     public static void MapStatsEndpoint(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/stats", (HttpContext http, WorkerContext context, Database database, TimeProvider time) =>
+        app.MapGet("/stats", (HttpContext http, WorkerContext context, Database database, TimeProvider time, Engram.Worker.Embedding.VectorIndex vectors, Engram.Worker.Embedding.EmbeddingService embeddings) =>
         {
             if (!WorkerToken.Matches(http.Request.Headers.Authorization, context.Token))
             {
@@ -54,6 +54,13 @@ internal static class StatsEndpoint
                     input_tokens_24h = calls.In ?? 0,
                     output_tokens_24h = calls.Out ?? 0,
                     cost_usd_24h = Math.Round(calls.Cost ?? 0, 4),
+                },
+                search = new
+                {
+                    semantic = context.Settings.Search.Semantic,
+                    model = context.Settings.Search.EmbeddingModel,
+                    vectors = vectors.Count,
+                    last_error = embeddings.LastError,
                 },
                 db_bytes = new FileInfo(database.Path).Length,
             });

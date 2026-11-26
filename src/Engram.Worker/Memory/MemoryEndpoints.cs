@@ -4,6 +4,7 @@ using System.Text.Json;
 using Engram.Core.Hooks;
 using Engram.Core.Security;
 using Engram.Worker.Capture;
+using Engram.Worker.Embedding;
 using Engram.Worker.Observer;
 using Engram.Worker.Storage;
 
@@ -20,7 +21,7 @@ internal static class MemoryEndpoints
     public static void MapMemoryEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/context", ContextAsync);
-        app.MapGet("/memory/search", Search);
+        app.MapGet("/memory/search", SearchAsync);
         app.MapGet("/memory/timeline", Timeline);
         app.MapGet("/memory/get", Get);
         app.MapPost("/memory/save", SaveAsync);
@@ -35,12 +36,15 @@ internal static class MemoryEndpoints
     /// SessionStart: registers the session (through the normal capture queue) and returns the context to inject,
     /// or an empty body when there is nothing to say.
     /// </summary>
-    private static async Task<IResult> ContextAsync(HttpContext http, WorkerContext context, CaptureQueue queue, ContextBuilder builder)
+    private static async Task<IResult> ContextAsync(HttpContext http, WorkerContext context, CaptureQueue queue, ContextBuilder builder, EmbeddingService embeddings)
     {
         if (!Authorized(http, context))
         {
             return Results.StatusCode(StatusCodes.Status401Unauthorized);
         }
+
+        // A session is starting: make sure the embedding model is loaded before Claude searches.
+        embeddings.RequestWarmUp();
 
         using var buffer = new MemoryStream();
         await http.Request.Body.CopyToAsync(buffer, http.RequestAborted).ConfigureAwait(false);
@@ -66,7 +70,7 @@ internal static class MemoryEndpoints
         }
     }
 
-    private static IResult Search(HttpContext http, WorkerContext context, MemoryStore store, ProjectResolver projects)
+    private static async Task<IResult> SearchAsync(HttpContext http, WorkerContext context, MemoryStore store, ProjectResolver projects, HybridSearcher searcher)
     {
         if (!Authorized(http, context))
         {
@@ -108,14 +112,28 @@ internal static class MemoryEndpoints
 
         var limit = int.TryParse(q["limit"], NumberStyles.None, CultureInfo.InvariantCulture, out var l) ? Math.Clamp(l, 1, 50) : DefaultSearchLimit;
         var branch = q["branch"].ToString() is { Length: > 0 } b ? b : null;
-        var rows = store.Search(new SearchQuery(text, projectId, type, since, branch, limit));
+        var mode = q["mode"].ToString().ToLowerInvariant() switch
+        {
+            "keyword" => SearchMode.Keyword,
+            "semantic" => SearchMode.Semantic,
+            _ => SearchMode.Hybrid,
+        };
+        var outcome = await searcher.SearchAsync(new SearchQuery(text, projectId, type, since, branch, limit), mode, http.RequestAborted).ConfigureAwait(false);
+        var rows = outcome.Rows;
+        var note = outcome.Note is null ? string.Empty : $" ({outcome.Note})";
         if (rows.Count == 0)
         {
-            return Text(text.Trim().Length == 0 ? $"No observations in {scope}." : $"No observations in {scope} match \"{text.Trim()}\".");
+            return Text((text.Trim().Length == 0 ? $"No observations in {scope}." : $"No observations in {scope} match \"{text.Trim()}\".") + note);
         }
 
+        var how = outcome.Used switch
+        {
+            SearchMode.Hybrid => "by keyword and meaning",
+            SearchMode.Semantic => "by meaning",
+            _ => "by keyword",
+        };
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"{rows.Count} result(s) in {scope}{(text.Trim().Length > 0 ? $" for \"{text.Trim()}\"" : string.Empty)}, best first. get_observations returns full records.\n");
+        sb.Append(CultureInfo.InvariantCulture, $"{rows.Count} result(s) in {scope}{(text.Trim().Length > 0 ? $" for \"{text.Trim()}\"" : string.Empty)}, best first {how}{note}. get_observations returns full records.\n");
         foreach (var row in rows)
         {
             sb.Append(IndexRow(row, includeProject: all)).Append('\n');
@@ -190,7 +208,7 @@ internal static class MemoryEndpoints
 
     private sealed record SaveRequest(string? Text, string? Title, string? Type, string[]? Files, string? Cwd);
 
-    private static async Task<IResult> SaveAsync(HttpContext http, WorkerContext context, MemoryStore store, ProjectResolver projects, CaptureStore capture, TimeProvider time)
+    private static async Task<IResult> SaveAsync(HttpContext http, WorkerContext context, MemoryStore store, ProjectResolver projects, CaptureStore capture, TimeProvider time, EmbeddingSignal embeddingSignal)
     {
         if (!Authorized(http, context))
         {
@@ -224,10 +242,11 @@ internal static class MemoryEndpoints
         var project = projects.Resolve(request.Cwd);
         var projectId = capture.GetOrCreateProject(project.Identity, project.Name, time.GetUtcNow());
         var id = store.Save(projectId, context.Platform, request.Cwd, project.Branch, new Observation(type, title, narrative, [], [.. (request.Files ?? []).Take(12)]));
+        embeddingSignal.Notify();
         return Text(string.Create(CultureInfo.InvariantCulture, $"Saved as #{id} ({type}) for this repository (project \"{project.Name}\")."));
     }
 
-    private static IResult Forget(HttpContext http, WorkerContext context, MemoryStore store)
+    private static IResult Forget(HttpContext http, WorkerContext context, MemoryStore store, VectorIndex vectors)
     {
         if (!Authorized(http, context))
         {
@@ -239,6 +258,7 @@ internal static class MemoryEndpoints
             return Text("forget needs an observation id.", 400);
         }
 
+        vectors.Remove(id); // the row's vector goes with it (ON DELETE CASCADE)
         return store.Forget(id) ? Text($"Deleted #{id}.") : Text($"No observation #{id}.", 404);
     }
 

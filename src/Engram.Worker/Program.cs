@@ -4,6 +4,7 @@ using Engram.Core.Security;
 using Engram.Core.Settings;
 using Engram.Worker;
 using Engram.Worker.Capture;
+using Engram.Worker.Embedding;
 using Engram.Worker.Memory;
 using Engram.Worker.Observer;
 using Engram.Worker.Storage;
@@ -37,6 +38,11 @@ builder.Services.AddSingleton<ObserverStore>();
 builder.Services.AddSingleton<JobSignal>();
 builder.Services.AddSingleton<MemoryStore>();
 builder.Services.AddSingleton<ContextBuilder>();
+builder.Services.AddSingleton<VectorIndex>();
+builder.Services.AddSingleton<EmbeddingSignal>();
+builder.Services.AddSingleton<IEmbeddingClient>(new OllamaEmbeddingClient(settings.Search, new HttpClient { Timeout = Timeout.InfiniteTimeSpan }));
+builder.Services.AddSingleton<EmbeddingService>();
+builder.Services.AddSingleton<HybridSearcher>();
 builder.Services.AddSingleton<IProcessRunner, SystemProcessRunner>();
 builder.Services.AddSingleton(sp => ObserverRuntime.Create(
     sp.GetRequiredService<WorkerContext>(), sp.GetRequiredService<ObserverStore>(), sp.GetRequiredService<IProcessRunner>(), new HttpClient(), getEnv));
@@ -48,6 +54,7 @@ builder.Services.AddSingleton<SpoolIngestor>();
 builder.Services.AddHostedService<CaptureWriter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SpoolIngestor>());
 builder.Services.AddHostedService<JobRunner>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<EmbeddingService>());
 builder.Services.AddHostedService<IdleShutdownService>();
 
 var app = builder.Build();

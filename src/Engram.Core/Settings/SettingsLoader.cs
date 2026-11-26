@@ -101,6 +101,19 @@ public static class SettingsLoader
             TypeWeights = injection.TypeWeights ?? new InjectionSettings().TypeWeights,
         };
 
+        var search = s.Search ?? new SearchSettings();
+        var searchDefaults = new SearchSettings();
+        search = search with
+        {
+            EmbeddingUrl = string.IsNullOrWhiteSpace(search.EmbeddingUrl) ? searchDefaults.EmbeddingUrl : search.EmbeddingUrl,
+            EmbeddingModel = string.IsNullOrWhiteSpace(search.EmbeddingModel) ? searchDefaults.EmbeddingModel : search.EmbeddingModel,
+            DocumentPrefix = search.DocumentPrefix ?? string.Empty,
+            QueryPrefix = search.QueryPrefix ?? string.Empty,
+            KeepAlive = string.IsNullOrWhiteSpace(search.KeepAlive) ? searchDefaults.KeepAlive : search.KeepAlive,
+            QueryTimeoutMs = Math.Clamp(search.QueryTimeoutMs, 200, 30_000),
+            MinSimilarity = Math.Clamp(search.MinSimilarity, 0, 1),
+        };
+
         var worker = s.Worker;
         if (worker.Port is <= 0 or >= 65536)
         {
@@ -117,6 +130,6 @@ public static class SettingsLoader
             ExcludePaths = capture.ExcludePaths ?? defaults.ExcludePaths,
             RedactPatterns = capture.RedactPatterns ?? defaults.RedactPatterns,
         };
-        return s with { Capture = capture, Worker = worker, Observer = observer, Injection = injection };
+        return s with { Capture = capture, Worker = worker, Observer = observer, Injection = injection, Search = search };
     }
 }

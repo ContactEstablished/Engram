@@ -12,7 +12,7 @@ internal sealed record MigrationResult(int FromVersion, int ToVersion, string? B
 /// </summary>
 internal static class Migrations
 {
-    // v1 (Phase 1): capture tables. v2 (Phase 2): observations, FTS, summaries, LLM call log. Vectors arrive in Phase 4.
+    // v1 (Phase 1): capture tables. v2 (Phase 2): observations, FTS, summaries, LLM call log. v3 (Phase 4): vectors.
     private static readonly (int Version, string Sql)[] All =
     [
         (1, """
@@ -156,6 +156,17 @@ internal static class Migrations
                 created_at         TEXT NOT NULL
             );
             CREATE INDEX ix_llm_calls_time ON llm_calls(created_at);
+            """),
+        (3, """
+            -- Phase 4: one embedding per observation (per model). Vectors are L2-normalized float32, little-endian.
+            CREATE TABLE observation_vectors (
+                observation_id INTEGER PRIMARY KEY REFERENCES observations(id) ON DELETE CASCADE,
+                model          TEXT NOT NULL,
+                dims           INTEGER NOT NULL,
+                vector         BLOB NOT NULL,
+                created_at     TEXT NOT NULL
+            );
+            CREATE INDEX ix_observation_vectors_model ON observation_vectors(model);
             """),
     ];
 

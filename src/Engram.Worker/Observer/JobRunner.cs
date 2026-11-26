@@ -33,7 +33,8 @@ internal sealed partial class JobRunner(
     WorkerContext context,
     JobSignal signal,
     TimeProvider time,
-    ILogger<JobRunner> logger) : BackgroundService
+    ILogger<JobRunner> logger,
+    Engram.Worker.Embedding.EmbeddingSignal? embeddingSignal = null) : BackgroundService
 {
     private static readonly TimeSpan IdlePoll = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BudgetWait = TimeSpan.FromSeconds(30);
@@ -101,6 +102,11 @@ internal sealed partial class JobRunner(
                     var turn = store.LoadTurn(job);
                     var observed = await observer.ObserveTurnAsync(turn, job.Id, cancellationToken).ConfigureAwait(false);
                     var saved = store.SaveObservations(job, observed.Observations, observed.Provider, observed.Model, [.. turn.Events.Select(e => e.Id)]);
+                    if (saved > 0)
+                    {
+                        embeddingSignal?.Notify();
+                    }
+
                     LogObserved(job.Id, saved, turn.Events.Count);
                     break;
                 case JobKinds.SummarizeCheckpoint or JobKinds.SummarizeSession:

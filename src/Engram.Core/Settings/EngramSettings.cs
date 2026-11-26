@@ -13,6 +13,8 @@ public sealed record EngramSettings
     public ObserverSettings Observer { get; set; } = new();
 
     public InjectionSettings Injection { get; set; } = new();
+
+    public SearchSettings Search { get; set; } = new();
 }
 
 public sealed record WorkerSettings
@@ -107,4 +109,33 @@ public sealed record InjectionSettings
 
     /// <summary>Rank multiplier for observations made on the current branch.</summary>
     public double SameBranchBoost { get; set; } = 1.5;
+}
+
+/// <summary>
+/// Semantic search: observations are embedded by a local model (Ollama) and searched by meaning as well as by
+/// keyword. Optional: when the embedding service is unreachable, search is keyword-only and vectors are filled
+/// in later.
+/// </summary>
+public sealed record SearchSettings
+{
+    public bool Semantic { get; set; } = true;
+
+    /// <summary>Ollama's base URL. Embeddings never leave this machine unless you point it elsewhere.</summary>
+    public string EmbeddingUrl { get; set; } = "http://127.0.0.1:11434";
+
+    public string EmbeddingModel { get; set; } = "nomic-embed-text";
+
+    /// <summary>nomic-embed-text is trained with these task prefixes; other models may want none.</summary>
+    public string DocumentPrefix { get; set; } = "search_document: ";
+
+    public string QueryPrefix { get; set; } = "search_query: ";
+
+    /// <summary>How long Ollama keeps the model loaded after a call (a cold load can take tens of seconds).</summary>
+    public string KeepAlive { get; set; } = "30m";
+
+    /// <summary>A search waits this long for the query embedding, then answers keyword-only.</summary>
+    public int QueryTimeoutMs { get; set; } = 3000;
+
+    /// <summary>Vector-only matches below this cosine similarity are dropped (nearest isn't always near).</summary>
+    public double MinSimilarity { get; set; } = 0.5;
 }

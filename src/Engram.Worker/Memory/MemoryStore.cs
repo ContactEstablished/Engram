@@ -66,17 +66,29 @@ internal sealed partial class MemoryStore(Database database, TimeProvider time)
     public IReadOnlyList<ObservationRow> Search(SearchQuery q)
     {
         ArgumentNullException.ThrowIfNull(q);
-        var terms = WordRegex().Matches(q.Text).Select(m => m.Value).Where(t => t.Length > 1).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList();
+        var terms = WordRegex().Matches(q.Text).Select(m => m.Value).Where(t => t.Length > 1 && !StopWords.Contains(t)).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList();
         using var c = database.Open();
         if (terms.Count == 0)
         {
-            return Filtered(c, q, match: null);
+            // No query: newest first. A query of only stop words matches nothing by keyword.
+            return string.IsNullOrWhiteSpace(q.Text) ? Filtered(c, q, match: null) : [];
         }
 
-        var all = string.Join(" ", terms.Select(t => $"\"{t}\"*"));
+        var all = string.Join(" ", terms.Select(Term));
         var results = Filtered(c, q, all);
-        return results.Count > 0 || terms.Count == 1 ? results : Filtered(c, q, string.Join(" OR ", terms.Select(t => $"\"{t}\"*")));
+        return results.Count > 0 || terms.Count == 1 ? results : Filtered(c, q, string.Join(" OR ", terms.Select(Term)));
     }
+
+    // Question words carry no meaning for keyword search and, prefix-matched, hit everything ("us" -> "uses").
+    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "a", "an", "and", "are", "as", "at", "be", "by", "can", "did", "do", "does", "for", "from", "how", "i", "in", "is", "it",
+        "of", "on", "or", "our", "should", "that", "the", "this", "to", "us", "was", "we", "were", "what", "when", "where",
+        "which", "who", "why", "with", "you", "your",
+    };
+
+    /// <summary>A quoted FTS5 term; prefix-matched only when long enough for the prefix to mean something.</summary>
+    private static string Term(string word) => word.Length >= 4 ? $"\"{word}\"*" : $"\"{word}\"";
 
     private static List<ObservationRow> Filtered(Microsoft.Data.Sqlite.SqliteConnection c, SearchQuery q, string? match)
     {
