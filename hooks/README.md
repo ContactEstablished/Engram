@@ -6,7 +6,7 @@ hooks as a Claude Code plugin.
 
 | Event | Hook | Worker does |
 | --- | --- | --- |
-| SessionStart (all sources) | command `engram hook session-start` | starts the worker if needed, registers the session (no context injected until Phase 3) |
+| SessionStart (all sources) | command `engram hook session-start` | starts the worker if needed, registers the session, prints the memory index (not on resume/fork) |
 | UserPromptSubmit | HTTP `/hooks/prompt` | stores the redacted prompt; skips subagent hand-backs |
 | PostToolUse, PostToolUseFailure | HTTP `/hooks/tool`, matcher below | stores the redacted, truncated tool call |
 | Stop | HTTP `/hooks/stop` | stores the last assistant message; queues an `observe-turn` job (Phase 2 runs it) |
@@ -33,3 +33,9 @@ engram status     # worker running? token matches? row counts
 ```
 
 Logs: `~/.engram/logs/worker-YYYYMMDD.log` (worker) and `~/.engram/logs/hook-errors.log` (SessionStart hook).
+
+## MCP server
+
+`mcp.json` goes to the sandbox repo's `.mcp.json` (project scope; Claude Code asks you to approve it once).
+It runs `engram mcp`, which offers `search`, `timeline`, `get_observations`, `save_memory` and `forget`, and
+relays them to the worker (starting it if needed). `/mcp` in Claude Code shows whether it connected.
