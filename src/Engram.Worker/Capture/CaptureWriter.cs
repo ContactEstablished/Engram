@@ -4,7 +4,7 @@ using Engram.Core.Hooks;
 namespace Engram.Worker.Capture;
 
 /// <summary>The only database writer for capture. Processes queued hook bodies one at a time.</summary>
-internal sealed partial class CaptureWriter(CaptureQueue queue, CaptureProcessor processor, ILogger<CaptureWriter> logger) : BackgroundService
+internal sealed partial class CaptureWriter(CaptureQueue queue, CaptureProcessor processor, Engram.Worker.Observer.JobSignal jobSignal, ILogger<CaptureWriter> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -15,6 +15,10 @@ internal sealed partial class CaptureWriter(CaptureQueue queue, CaptureProcessor
                 var payload = HookPayloadReader.Read(item.Body);
                 var outcome = processor.Process(payload);
                 LogProcessed(payload.HookEventName, outcome, item.Origin);
+                if (outcome == CaptureOutcome.Stored)
+                {
+                    jobSignal.Notify();
+                }
             }
             catch (JsonException ex)
             {

@@ -53,7 +53,7 @@ internal sealed class CaptureProcessor
             logger.LogWarning("capture.redactPatterns: invalid regex skipped: {Pattern}", invalid);
         }
 
-        _shaper = new PayloadShaper(redactor, _settings.MaxStringBytes);
+        _shaper = new PayloadShaper(redactor, _settings.MaxStringBytes, _settings.MaxPromptBytes);
         _toolMatcher = BuildMatcher(_settings.ToolMatcher, logger);
         _skipTools = new HashSet<string>(_settings.SkipTools, StringComparer.Ordinal);
         _excluded = new Matcher(StringComparison.OrdinalIgnoreCase);
@@ -95,7 +95,7 @@ internal sealed class CaptureProcessor
             case SessionStartPayload:
                 break; // EnsureSession recorded it
             case UserPromptSubmitPayload p:
-                _store.InsertPrompt(p.SessionId, p.PromptId, _shaper.ShapeText(p.Prompt), at);
+                _store.InsertPrompt(p.SessionId, p.PromptId, _shaper.ShapeLongText(p.Prompt), at);
                 break;
             case PostToolUsePayload p:
                 _store.InsertEvent(new EventInsert(
@@ -113,7 +113,7 @@ internal sealed class CaptureProcessor
                 // Stop has no tool_use_id; key it on the turn so a retried hook is stored once.
                 _store.InsertEvent(new EventInsert(
                     p.SessionId, p.PromptId, p.HookEventName, null, p.PromptId is { } turn ? $"stop:{p.SessionId}:{turn}" : null, p.AgentId, null, null,
-                    p.LastAssistantMessage is { } m ? _shaper.ShapeText(m) : null,
+                    p.LastAssistantMessage is { } m ? _shaper.ShapeLongText(m) : null,
                     IsError: false, null, at));
                 _store.EnqueueJob(JobKinds.ObserveTurn, p.SessionId, p.PromptId, at);
                 break;

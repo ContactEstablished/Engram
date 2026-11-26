@@ -6,7 +6,8 @@
     1. Publishes engram.exe (Native AOT) and engram-worker.exe (self-contained single file).
     2. Stops a running worker, copies both to %LOCALAPPDATA%\Engram\bin, adds that folder to your USER PATH.
     3. Runs `engram install`: ~/.engram, default settings, the worker token, and the ENGRAM_TOKEN user variable.
-    4. Puts hooks/settings.local.json into the sandbox repo's .claude/settings.local.json.
+    4. Puts hooks/settings.local.json into the sandbox repo's .claude/settings.local.json, and hooks/mcp.json
+       into its .mcp.json (the engram MCP server; Claude Code asks you to approve it once).
     5. With -Wsl: the same inside WSL (~/.local/bin, ~/.engram, ~/.profile, ~/src/engram-sandbox).
 
   Never touches ~/.claude/settings.json. Asks before changing PATH, ENGRAM_TOKEN and ~/.profile unless -Yes.
@@ -39,6 +40,7 @@ $winWorker = Join-Path $pub 'Engram.Worker\release_win-x64\engram-worker.exe'
 $linuxCli = Join-Path $pub 'Engram.Cli\release_linux-x64\engram'
 $linuxWorker = Join-Path $pub 'Engram.Worker\release_linux-x64\engram-worker'
 $hooks = Join-Path $root 'hooks\settings.local.json'
+$mcpJson = Join-Path $root 'hooks\mcp.json'
 
 function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
 
@@ -124,9 +126,10 @@ Invoke-Step 'engram install (settings, token, ENGRAM_TOKEN)' {
     Invoke-Native 'engram install' { & (Join-Path $bin 'engram.exe') @installArgs }
 }
 
-Invoke-Step "hooks into $Sandbox\.claude\settings.local.json" {
+Invoke-Step "hooks into $Sandbox\.claude\settings.local.json, MCP server into $Sandbox\.mcp.json" {
     New-Item -ItemType Directory -Force (Join-Path $Sandbox '.claude') | Out-Null
     Copy-Item $hooks (Join-Path $Sandbox '.claude\settings.local.json') -Force
+    Copy-Item $mcpJson (Join-Path $Sandbox '.mcp.json') -Force
     if (-not (Test-Path (Join-Path $Sandbox '.git'))) {
         'hello from the sandbox' | Set-Content (Join-Path $Sandbox 'notes.txt')
         git -C $Sandbox init -q
@@ -141,7 +144,7 @@ if ($Wsl) {
     $wslArgs = if ($Distro) { @('-d', $Distro) } else { @() }
     $sh = @'
 set -e
-cli="$1"; worker="$2"; hooks="$3"; yes="$4"
+cli="$1"; worker="$2"; hooks="$3"; yes="$4"; mcp="$5"
 # WSL forwards its localhost ports to Windows, so the WSL worker can't share the Windows worker's port.
 port=47614
 bin="$HOME/.local/bin"
@@ -161,6 +164,7 @@ grep -q "\"port\": $port" "$settings" || { echo "could not set worker.port=$port
 sandbox="$HOME/src/engram-sandbox"
 mkdir -p "$sandbox/.claude"
 sed "s/127.0.0.1:47613/127.0.0.1:$port/g" "$hooks" > "$sandbox/.claude/settings.local.json"
+cp "$mcp" "$sandbox/.mcp.json"
 if [ ! -d "$sandbox/.git" ]; then
   cd "$sandbox"
   git init -q
@@ -174,7 +178,7 @@ echo "WSL: engram $("$bin/engram" --version) installed; worker port $port; hooks
         $scriptWin = Join-Path $root 'artifacts\wsl-install-dev.sh'
         [IO.File]::WriteAllText($scriptWin, ($sh -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
         $toWsl = { param($p) (wsl.exe @wslArgs -e wslpath -a $p).Trim() }
-        wsl.exe @wslArgs -e bash (& $toWsl $scriptWin) (& $toWsl $linuxCli) (& $toWsl $linuxWorker) (& $toWsl $hooks) $(if ($Yes) { '1' } else { '0' })
+        wsl.exe @wslArgs -e bash (& $toWsl $scriptWin) (& $toWsl $linuxCli) (& $toWsl $linuxWorker) (& $toWsl $hooks) $(if ($Yes) { '1' } else { '0' }) (& $toWsl $mcpJson)
         if ($LASTEXITCODE -ne 0) { throw "WSL install failed ($LASTEXITCODE)" }
     }
 }

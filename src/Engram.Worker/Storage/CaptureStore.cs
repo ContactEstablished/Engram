@@ -108,7 +108,10 @@ internal sealed class CaptureStore(Database database)
             new { e.SessionId, e.PromptId, e.HookEvent, e.ToolName, e.ToolUseId, e.AgentId, e.ToolInput, e.ToolResponse, e.Text, e.IsError, e.DurationMs, At = Iso(e.At) });
     }
 
-    /// <summary>Queues work for the observer (Phase 2). Duplicate (kind, session, prompt) keys are ignored.</summary>
+    /// <summary>
+    /// Queues work for the observer. A retried hook (same kind, session, prompt) is ignored; a summary job that
+    /// already ran is queued again, so a resumed session gets an updated summary.
+    /// </summary>
     public void EnqueueJob(string kind, string sessionId, string? promptId, DateTimeOffset at)
     {
         using var c = database.Open();
@@ -116,7 +119,9 @@ internal sealed class CaptureStore(Database database)
             """
             INSERT INTO jobs (kind, session_id, prompt_id, next_run_at, created_at, updated_at)
             VALUES (@kind, @sessionId, @promptId, @at, @at, @at)
-            ON CONFLICT DO NOTHING
+            ON CONFLICT (kind, session_id, ifnull(prompt_id, '')) DO UPDATE SET
+                status = 'pending', attempts = 0, next_run_at = @at, last_error = NULL, updated_at = @at
+            WHERE jobs.kind <> 'observe-turn' AND jobs.status IN ('done', 'parked')
             """,
             new { kind, sessionId, promptId, at = Iso(at) });
     }

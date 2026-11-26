@@ -81,6 +81,11 @@ pwsh spike/measure-coldstart.ps1                         # AOT cold-start timing
 - The worker is the only database writer. Hook endpoints only authenticate and enqueue; filtering, git and
   SQLite work happen on the background `CaptureWriter`. Endpoints always answer an empty 200 for events
   Engram chooses not to store.
+- The observer runs `claude -p` only through `ClaudeCliClient` (no tools, `--strict-mcp-config`, sandbox cwd,
+  `ENGRAM_DISABLE=1`, turn text on stdin). Never add `--bare` (API-key only) and never read Claude Code's credentials.
+  Tests must never launch the real `claude`: `WorkerFactory` defaults to `observer.provider = none`.
+- Dapper maps SQLite integers to `long`: positional records need `long` (not `int`/`bool`) parameters, or map through
+  a tuple first.
 - Schema changes are new entries in `Storage/Migrations.cs`; never edit a released migration.
 - Worker tests use `WorkerFactory` (temp `Engram:Home`); never let a test touch the real `~/.engram`.
 - Settings records use `{ get; set; }`, not `init`: STJ source generation drops initializer defaults for
@@ -88,9 +93,11 @@ pwsh spike/measure-coldstart.ps1                         # AOT cold-start timing
 
 ## Current phase
 
-**Phase 1 — capture: complete (gate passed 2026-11-26** on Windows and WSL; see `docs/phase1.md`).
-Scope: hooks → worker → SQLite (prompts, tool events, pending jobs). **Do not start Phase 2** (observer /
-summarizer) until the user confirms real sessions land in the database on Windows and WSL.
+**Phase 3 — injection and search: complete (gate passed 2026-11-26** on Windows and WSL; see `docs/phase3.md`). SessionStart prints the memory index; `engram mcp` serves search, timeline, get_observations, save_memory, forget. Next: Phase 4 (semantic search), approved by the user; the embedding provider is still to be chosen.
+
+Phase 2 — observer: complete (quality gate passed 2026-11-26; see `docs/phase2.md`).
+
+Phase 1 — capture: complete (gate passed 2026-11-26 on Windows and WSL; see `docs/phase1.md`).
 
 Phase 0 complete (gate approved 2026-11-26).
 
@@ -102,5 +109,5 @@ Real fixtures for all 11 events are in `tests/fixtures/hooks`; findings and the 
 - WSL runs its own worker inside WSL (NAT networking); no `.wslconfig` changes.
 - Claude Code's `prompt_id` is the turn key.
 - Skip `SubagentHandback` and `ToolSearch`; drop `originalFile` and `file.content` bodies; truncate other
-  strings to 4 KB; `UserPromptSubmit` prompts starting with `<agent-message` are subagent hand-backs,
+  strings to 4 KB (changed in Phase 2: keep the start and end; prompts and final answers 16 KB); `UserPromptSubmit` prompts starting with `<agent-message` are subagent hand-backs,
   not user prompts.

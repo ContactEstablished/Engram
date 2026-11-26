@@ -7,8 +7,9 @@ It stores them in one SQLite file under your profile and feeds the relevant ones
 Search is exposed over MCP. It sends no telemetry. The only outbound traffic goes to the summarizer you
 configure.
 
-> Status: **Phase 1** (capture). Hooks store each turn's prompt and tool calls, redacted, in
-> `~/.engram/engram.db`. Summaries, context injection and search come in Phases 2–3. See `docs/phase1.md`.
+> Status: **Phase 3** (working memory). Hooks store each turn, redacted, in `~/.engram/engram.db`; a background
+> observer (`claude -p` with Haiku) turns them into observations and session summaries; each new session starts
+> with a compact memory index, and `engram mcp` lets Claude search it. See `docs/phase1.md`–`docs/phase3.md`.
 
 ## Try it (dogfooding)
 
@@ -39,5 +40,5 @@ The published CLI is at `artifacts/publish/Engram.Cli/release_win-x64/engram.exe
 - `CLAUDE.md`: stack, layout, ground rules, current phase
 - `spike/README.md`: Phase 0 run book
 - `docs/phase0-findings.md`: Phase 0 results
-- `docs/phase1.md`: Phase 1 design, measurements and gate run book
+- `docs/phase1.md`, `docs/phase2.md`, `docs/phase3.md`: design, measurements and gate run books
 - `hooks/README.md`: the capture hooks

@@ -28,7 +28,14 @@ internal static class StatusCommand
         output.WriteLine($"spooled:       {spooled} payload(s) waiting for the worker");
         if (status == 200 && token is not null && WorkerClient.Get(settings.Worker.Port, "/stats", Timeout, token) is (200, { } stats))
         {
-            output.WriteLine($"stored:        {stats}");
+            try
+            {
+                PrintStats(stats, output);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                output.WriteLine("stored:        (the worker's stats were unreadable; is the worker newer than this engram?)");
+            }
         }
 
         foreach (var warning in warnings)
@@ -37,6 +44,35 @@ internal static class StatusCommand
         }
 
         return status == 200 ? 0 : 1;
+    }
+
+    /// <summary>Prints the worker's /stats JSON as a few readable lines. Tolerates missing fields (older workers).</summary>
+    internal static void PrintStats(string json, TextWriter output)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        long N(System.Text.Json.JsonElement parent, string name) =>
+            parent.ValueKind == System.Text.Json.JsonValueKind.Object && parent.TryGetProperty(name, out var v) && v.TryGetInt64(out var n) ? n : 0;
+        var counts = root.TryGetProperty("counts", out var c) ? c : default;
+        output.WriteLine($"stored:        {N(counts, "sessions")} sessions, {N(counts, "prompts")} prompts, {N(counts, "events")} tool events, {N(counts, "observations")} observations, {N(counts, "summaries")} summaries");
+        if (root.TryGetProperty("jobs", out var jobs))
+        {
+            output.WriteLine($"jobs:          {N(jobs, "pending")} pending, {N(jobs, "running")} running, {N(jobs, "done")} done, {N(jobs, "parked")} parked");
+            if (jobs.TryGetProperty("last_error", out var err) && err.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                output.WriteLine($"last error:    {err.GetString()}");
+            }
+        }
+
+        if (root.TryGetProperty("observer", out var obs))
+        {
+            var provider = obs.TryGetProperty("provider", out var p) ? p.GetString() : "?";
+            var model = obs.TryGetProperty("model", out var m) ? m.GetString() : "?";
+            var cost = obs.TryGetProperty("cost_usd_24h", out var usd) && usd.TryGetDouble(out var d) ? d : 0;
+            output.WriteLine(provider == "none"
+                ? "observer:      off (observer.provider = none); jobs wait in the queue"
+                : $"observer:      {provider}/{model}, last 24h: {N(obs, "calls_24h")} calls ({N(obs, "failed_24h")} failed), {N(obs, "input_tokens_24h")} in / {N(obs, "output_tokens_24h")} out tokens, list-price cost ~${cost.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}; budget {N(obs, "max_calls_per_hour")}/hour");
+        }
     }
 
     public static int StopWorker(Func<string, string?> getEnv, TextWriter output)

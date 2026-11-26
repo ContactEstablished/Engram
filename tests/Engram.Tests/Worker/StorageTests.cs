@@ -28,7 +28,9 @@ public sealed class StorageTests : IDisposable
         using var c = db.Open();
         c.ExecuteScalar<string>("PRAGMA journal_mode").ShouldBe("wal");
         c.Query<string>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-            .ShouldBe(["events", "jobs", "projects", "prompts", "schema_version", "sessions"], ignoreOrder: true);
+            .ShouldBe(
+                ["events", "jobs", "llm_calls", "observations", "observations_fts", "observations_fts_config", "observations_fts_data", "observations_fts_docsize", "observations_fts_idx", "projects", "prompts", "schema_version", "sessions", "summaries"],
+                ignoreOrder: true);
         Directory.Exists(_temp.Combine("backups")).ShouldBeFalse();
     }
 
@@ -110,12 +112,33 @@ public sealed class StorageTests : IDisposable
     }
 
     [Fact]
-    public void Truncation_never_splits_a_character()
+    public void Truncation_keeps_the_start_and_the_end_and_never_splits_a_character()
     {
-        var shaper = new PayloadShaper(new Engram.Core.Security.Redactor(), 5);
+        PayloadShaper.Truncate("abc", 8).ShouldBe("abc");
+        PayloadShaper.Truncate("0123456789", 8).ShouldBe("01…<truncated 2 chars>…456789");
 
-        shaper.Truncate("ab🚀cd").ShouldBe("ab…<truncated 4 chars>");
-        shaper.Truncate("abc").ShouldBe("abc");
+        // The verdict at the end of a long log survives; so does the command at the start.
+        var log = "RUN dotnet test\n" + new string('.', 20_000) + "\nFailed: 3, Passed: 40";
+        var cut = PayloadShaper.Truncate(log, 4096);
+        cut.ShouldStartWith("RUN dotnet test");
+        cut.ShouldEndWith("Failed: 3, Passed: 40");
+        System.Text.Encoding.UTF8.GetByteCount(cut).ShouldBeLessThan(4096 + 60);
+
+        // Emoji (surrogate pairs, 4 bytes each) at both cut points stay whole.
+        var emoji = string.Concat(Enumerable.Repeat("🚀", 100));
+        var cutEmoji = PayloadShaper.Truncate(emoji, 40);
+        cutEmoji.ShouldNotContain("�");
+        cutEmoji.Where(char.IsSurrogate).Count().ShouldBe(cutEmoji.Where(char.IsHighSurrogate).Count() * 2);
+    }
+
+    [Fact]
+    public void Prompts_get_a_larger_cap_than_tool_output()
+    {
+        var shaper = new PayloadShaper(new Engram.Core.Security.Redactor(), 1000, 8000);
+        var text = new string('x', 5000);
+
+        shaper.ShapeText(text).ShouldContain("truncated");
+        shaper.ShapeLongText(text).ShouldBe(text);
     }
 
     private static void Git(string cwd, params string[] args)

@@ -9,7 +9,7 @@ namespace Engram.Worker.Capture;
 /// Makes tool input/output safe and small before it touches the database: drops whole-file copies,
 /// redacts every string, and truncates long strings.
 /// </summary>
-internal sealed class PayloadShaper(Redactor redactor, int maxStringBytes)
+internal sealed class PayloadShaper(Redactor redactor, int maxStringBytes, int maxPromptBytes)
 {
     // Whole-file copies that only duplicate what's on disk (Phase 0 §11).
     private static readonly string[] DroppedResponsePaths = ["originalFile", "file.content"];
@@ -18,7 +18,11 @@ internal sealed class PayloadShaper(Redactor redactor, int maxStringBytes)
 
     public string? ShapeResponse(JsonElement? response) => response is { } e ? Shape(JsonNode.Parse(e.GetRawText()), DroppedResponsePaths) : null;
 
+    /// <summary>For tool input/output and error text: redacted, then cut to <c>capture.maxStringBytes</c>.</summary>
     public string ShapeText(string text) => Truncate(redactor.Redact(text));
+
+    /// <summary>For prompts and Claude's final answers: redacted, then cut to the larger <c>capture.maxPromptBytes</c>.</summary>
+    public string ShapeLongText(string text) => Truncate(redactor.Redact(text), maxPromptBytes);
 
     private string? Shape(JsonNode? node, string[] dropPaths)
     {
@@ -104,28 +108,52 @@ internal sealed class PayloadShaper(Redactor redactor, int maxStringBytes)
 
     private static bool IsString(JsonNode? node) => node is JsonValue v && v.GetValueKind() == JsonValueKind.String;
 
-    /// <summary>Cuts to <c>maxStringBytes</c> UTF-8 bytes on a character boundary, with a marker.</summary>
-    public string Truncate(string value)
+    /// <summary>
+    /// Keeps the start and the end of <paramref name="value"/>, within <paramref name="limitBytes"/> UTF-8 bytes
+    /// (a quarter for the start, the rest for the end), and marks the cut. Build and test logs put the
+    /// verdict at the end, so a head-only cut would keep the chatter and lose the failure.
+    /// </summary>
+    public static string Truncate(string value, int limitBytes)
     {
         ArgumentNullException.ThrowIfNull(value);
-        if (Encoding.UTF8.GetByteCount(value) <= maxStringBytes)
+        if (Encoding.UTF8.GetByteCount(value) <= limitBytes)
         {
             return value;
         }
 
+        var headBudget = limitBytes / 4;
+        var tailBudget = limitBytes - headBudget;
+        var head = 0;
         var bytes = 0;
-        var cut = 0;
         foreach (var rune in value.EnumerateRunes())
         {
-            if (bytes + rune.Utf8SequenceLength > maxStringBytes)
+            if (bytes + rune.Utf8SequenceLength > headBudget)
             {
                 break;
             }
 
             bytes += rune.Utf8SequenceLength;
-            cut += rune.Utf16SequenceLength;
+            head += rune.Utf16SequenceLength;
         }
 
-        return string.Concat(value.AsSpan(0, cut), $"…<truncated {value.Length - cut} chars>");
+        var tailStart = value.Length;
+        bytes = 0;
+        for (var i = value.Length; i > head;)
+        {
+            var width = char.IsLowSurrogate(value[i - 1]) && i - 2 >= head && char.IsHighSurrogate(value[i - 2]) ? 2 : 1;
+            var runeBytes = width == 2 ? 4 : Encoding.UTF8.GetByteCount(value.AsSpan(i - width, width));
+            if (bytes + runeBytes > tailBudget)
+            {
+                break;
+            }
+
+            bytes += runeBytes;
+            i -= width;
+            tailStart = i;
+        }
+
+        return string.Concat(value.AsSpan(0, head), $"…<truncated {tailStart - head} chars>…", value.AsSpan(tailStart));
     }
+
+    private string Truncate(string value) => Truncate(value, maxStringBytes);
 }

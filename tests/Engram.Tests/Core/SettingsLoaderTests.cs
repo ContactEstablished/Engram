@@ -21,6 +21,10 @@ public sealed class SettingsLoaderTests : IDisposable
         settings.Worker.Port.ShouldBe(47613);
         settings.Capture.ExcludePaths.ShouldBe(new CaptureSettings().ExcludePaths);
         settings.Capture.MaxStringBytes.ShouldBe(4096);
+        settings.Capture.MaxPromptBytes.ShouldBe(16384);
+        settings.Observer.Provider.ShouldBe("claude-cli");
+        settings.Observer.Model.ShouldBe("haiku");
+        settings.Observer.MaxCallsPerHour.ShouldBe(120);
         warnings.ShouldBeEmpty();
     }
 
