@@ -76,6 +76,17 @@ internal static class MemoryEndpoints
         var q = http.Request.Query;
         var text = q["q"].ToString();
         var all = q["all"] == "1" || q["all"] == "true";
+        var type = q["type"].ToString() is { Length: > 0 } t ? ObservationTypes.Normalize(t) : null;
+        if (q["type"].ToString().Length > 0 && type is null)
+        {
+            return Text($"Unknown type '{q["type"]}'. Types: {string.Join(", ", ObservationTypes.All)}.", 400);
+        }
+
+        if (!TryParseSince(q["since"].ToString(), out var since))
+        {
+            return Text($"Can't read since='{q["since"]}'. Use a date (2026-11-01) or a number of days (14d).", 400);
+        }
+
         long? projectId = null;
         string scope = "all repos";
         if (!all)
@@ -93,17 +104,6 @@ internal static class MemoryEndpoints
             {
                 return Text($"No memory recorded for {scope} yet.");
             }
-        }
-
-        var type = q["type"].ToString() is { Length: > 0 } t ? ObservationTypes.Normalize(t) : null;
-        if (q["type"].ToString().Length > 0 && type is null)
-        {
-            return Text($"Unknown type '{q["type"]}'. Types: {string.Join(", ", ObservationTypes.All)}.", 400);
-        }
-
-        if (!TryParseSince(q["since"].ToString(), out var since))
-        {
-            return Text($"Can't read since='{q["since"]}'. Use a date (2026-11-01) or a number of days (14d).", 400);
         }
 
         var limit = int.TryParse(q["limit"], NumberStyles.None, CultureInfo.InvariantCulture, out var l) ? Math.Clamp(l, 1, 50) : DefaultSearchLimit;

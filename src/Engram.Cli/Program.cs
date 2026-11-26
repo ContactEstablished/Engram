@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Engram.Cli.Commands;
 using Engram.Cli.Hooks;
+using Engram.Cli.Mcp;
 using Engram.Cli.Spike;
 
 namespace Engram.Cli;
@@ -15,6 +16,10 @@ internal static class Program
                                                     Create ~/.engram, default settings and the worker token; export ENGRAM_TOKEN
           engram status                             Show whether the worker is running and where things are
           engram recent [--limit N]                 Show the latest observations and session summaries
+          engram search WORDS [--all] [--type T] [--since 14d] [--limit N]
+                                                    Search memory of the current repo (or all repos)
+          engram show ID...                         Full records for observations
+          engram mcp                                MCP server (stdio) with search, timeline, get_observations, save_memory, forget
           engram worker start | stop                Start the worker in the background, or stop it
           engram hook session-start                 SessionStart hook handler (registers the session, starts the worker)
 
@@ -58,6 +63,9 @@ internal static class Program
                 ["install", .. var rest] => InstallCommand.Run(rest),
                 ["status"] => StatusCommand.Run(Environment.GetEnvironmentVariable, Console.Out),
                 ["recent", .. var recentArgs] => RecentCommand.Run(recentArgs, Environment.GetEnvironmentVariable, Console.Out),
+                ["search", .. var searchArgs] => SearchCommand.Search(searchArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
+                ["show", .. var showArgs] => SearchCommand.Show(showArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
+                ["mcp"] => RunMcp(),
                 ["worker", "start"] => StatusCommand.StartWorker(Environment.GetEnvironmentVariable, Console.Out),
                 ["worker", "stop"] => StatusCommand.StopWorker(Environment.GetEnvironmentVariable, Console.Out),
                 ["spike", "listen", .. var rest] => SpikeListenCommand.Run(rest),
@@ -72,6 +80,18 @@ internal static class Program
             Console.Error.WriteLine($"engram: {ex.Message}");
             return 1;
         }
+    }
+
+    /// <summary>The repo the session is about: Claude Code's project dir if it says, else our working directory.</summary>
+    private static string McpCwd() => Environment.GetEnvironmentVariable("CLAUDE_PROJECT_DIR") is { Length: > 0 } dir ? dir : Environment.CurrentDirectory;
+
+    private static int RunMcp()
+    {
+        var api = new WorkerMemoryApi(Environment.GetEnvironmentVariable);
+        var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        new McpServer(EngramTools.Create(api, McpCwd), version, EngramTools.Instructions)
+            .Run(Console.OpenStandardInput(), Console.OpenStandardOutput(), Console.Error);
+        return 0;
     }
 
     private static double? ProcessUptimeMs()
