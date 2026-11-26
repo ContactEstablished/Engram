@@ -61,7 +61,7 @@ function New-Sandbox([string]$Path) {
         if (-not (Test-Path (Join-Path $Path '.git'))) {
             'hello from the sandbox' | Set-Content (Join-Path $Path 'notes.txt')
             git -C $Path init -q
-            git -C $Path add .
+            git -C $Path add notes.txt
             git -C $Path -c user.name=engram -c user.email=engram@localhost commit -qm init
         }
     }
@@ -147,7 +147,7 @@ if [ ! -d "$sandbox/.git" ]; then
   cd "$sandbox"
   git init -q
   echo "hello from the sandbox" > notes.txt
-  git add .
+  git add notes.txt
   git -c user.name=engram -c user.email=engram@localhost commit -qm init
 fi
 cat > "$HOME/.local/bin/engram-spike-session" <<'EOS'
