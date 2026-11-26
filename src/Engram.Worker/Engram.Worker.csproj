@@ -5,6 +5,11 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- Published self-contained single-file ReadyToRun (not AOT: Dapper uses reflection). -->
     <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Declared here (not only at publish) so build and publish restore the same packages: stable lock file. -->
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
   </PropertyGroup>
 
   <ItemGroup>

@@ -25,6 +25,7 @@ var context = new WorkerContext(home, settings, WorkerToken.ReadOrCreate(home), 
 // Loopback only. Never bind to all interfaces.
 builder.WebHost.UseUrls(builder.Configuration["Urls"] ?? $"http://127.0.0.1:{settings.Worker.Port}");
 builder.Logging.AddProvider(new FileLoggerProvider(EngramPaths.Logs(home)));
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning); // no per-request lines
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(context);
@@ -61,6 +62,17 @@ app.MapGet("/health", () => Results.Text(
     string.Create(CultureInfo.InvariantCulture, $$"""{"status":"ok","pid":{{Environment.ProcessId}},"schema":{{migration.ToVersion}}}"""),
     "application/json"));
 app.MapHookEndpoints();
+app.MapStatsEndpoint();
+app.MapPost("/shutdown", (HttpContext http, IHostApplicationLifetime lifetime) =>
+{
+    if (!WorkerToken.Matches(http.Request.Headers.Authorization, context.Token))
+    {
+        return Results.StatusCode(StatusCodes.Status401Unauthorized);
+    }
+
+    lifetime.StopApplication(); // the capture queue drains as the host stops
+    return Results.Ok();
+});
 
 await app.RunAsync().ConfigureAwait(false);
 return 0;

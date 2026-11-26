@@ -162,6 +162,20 @@ public sealed class HookCaptureTests : IDisposable
     }
 
     [Fact]
+    public async Task Stats_need_the_token_and_report_counts()
+    {
+        await SendAsync($$$"""{"hook_event_name":"UserPromptSubmit",{{{Common()}}},"prompt":"hi"}""");
+        using var anonymous = _factory.CreateClient();
+        using var authorized = _factory.CreateHookClient();
+
+        (await anonymous.GetAsync(new Uri("/stats", UriKind.Relative), Ct)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        var stats = await authorized.GetStringAsync(new Uri("/stats", UriKind.Relative), Ct);
+
+        stats.ShouldContain("\"prompts\":1");
+        stats.ShouldContain("\"sessions\":1");
+    }
+
+    [Fact]
     public async Task Spooled_payloads_are_ingested()
     {
         var spool = EngramPaths.Spool(_factory.Home);
