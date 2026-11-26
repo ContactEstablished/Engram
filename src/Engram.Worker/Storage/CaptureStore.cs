@@ -35,6 +35,7 @@ internal static class JobKinds
     public const string ObserveTurn = "observe-turn";
     public const string SummarizeCheckpoint = "summarize-checkpoint";
     public const string SummarizeSession = "summarize-session";
+    public const string SummarizeNote = "summarize-note";
 }
 
 /// <summary>Writes for the capture pipeline. Every method is idempotent for hook retries.</summary>

@@ -95,6 +95,12 @@ internal static class RecentCommand
                 var created = Str(o, "created_at");
                 output.WriteLine($"  #{o.GetProperty("id").GetInt64()} {Str(o, "type"),-9} {created[..Math.Min(10, created.Length)]}  {Str(o, "title")}   ({Str(o, "project")}, {Str(o, "branch")})");
                 output.WriteLine($"      {Str(o, "narrative")}");
+                var note = Str(o, "note");
+                if (note.Length > 0)
+                {
+                    var source = Str(o, "source");
+                    output.WriteLine($"      saved note{(source.Length > 0 ? " from " + source : string.Empty)}{(note == "pending" ? "; summary pending" : string.Empty)} (engram show {o.GetProperty("id").GetInt64()} for the full text)");
+                }
                 var files = Str(o, "files");
                 if (files is not ("" or "[]"))
                 {

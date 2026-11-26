@@ -50,6 +50,7 @@ builder.Services.AddSingleton<ProjectResolver>();
 builder.Services.AddSingleton<CaptureProcessor>();
 builder.Services.AddSingleton<CaptureQueue>();
 builder.Services.AddSingleton<IdleTracker>();
+builder.Services.AddSingleton<NoteService>();
 builder.Services.AddSingleton<SpoolIngestor>();
 builder.Services.AddHostedService<CaptureWriter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SpoolIngestor>());

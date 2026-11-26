@@ -18,6 +18,7 @@ internal static class StatusCommand
         var token = WorkerToken.Read(home);
         var (status, body) = WorkerClient.Get(settings.Worker.Port, "/health", Timeout);
         var spooled = Directory.Exists(EngramPaths.Spool(home)) ? Directory.GetFiles(EngramPaths.Spool(home), "*.json").Length : 0;
+        var spooledNotes = Directory.Exists(EngramPaths.NoteSpool(home)) ? Directory.GetFiles(EngramPaths.NoteSpool(home), "*.json").Length : 0;
 
         output.WriteLine($"home:          {home}");
         output.WriteLine($"worker:        {(status == 200 ? $"running on 127.0.0.1:{settings.Worker.Port} {body}" : $"not running (port {settings.Worker.Port})")}");
@@ -25,7 +26,7 @@ internal static class StatusCommand
         output.WriteLine($"database:      {(File.Exists(EngramPaths.Database(home)) ? EngramPaths.Database(home) : "not created yet")}");
         output.WriteLine($"token:         {(token is null ? "missing (run engram install)" : "present")}");
         output.WriteLine($"ENGRAM_TOKEN:  {(getEnv(WorkerToken.EnvironmentVariable) is { } env ? env == token ? "set, matches" : "set, DOES NOT MATCH ~/.engram/token" : "not set in this shell")}");
-        output.WriteLine($"spooled:       {spooled} payload(s) waiting for the worker");
+        output.WriteLine($"spooled:       {spooled} payload(s) and {spooledNotes} note(s) waiting for the worker");
         if (status == 200 && token is not null && WorkerClient.Get(settings.Worker.Port, "/stats", Timeout, token) is (200, { } stats))
         {
             try
@@ -132,6 +133,7 @@ internal static class StatusCommand
         }
 
         var spooled = Directory.Exists(EngramPaths.Spool(home)) ? Directory.GetFiles(EngramPaths.Spool(home), "*.json").Length : 0;
+        var spooledNotes = Directory.Exists(EngramPaths.NoteSpool(home)) ? Directory.GetFiles(EngramPaths.NoteSpool(home), "*.json").Length : 0;
         output.WriteLine(EnableCommand.Json(w =>
         {
             w.WriteString("version", typeof(StatusCommand).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
@@ -158,6 +160,7 @@ internal static class StatusCommand
             Count(w, "sessions", sessions);
             Count(w, "vectors", vectors);
             w.WriteNumber("spooled", spooled);
+            w.WriteNumber("spooled_notes", spooledNotes);
             w.WriteStartArray("warnings");
             foreach (var warning in warnings)
             {

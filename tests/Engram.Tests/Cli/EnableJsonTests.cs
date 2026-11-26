@@ -219,7 +219,7 @@ public sealed class EnableJsonTests : IDisposable
 
         var text = output.ToString();
         var root = JsonDocument.Parse(text).RootElement;
-        root.GetProperty("version").GetString().ShouldBe("0.4.0");
+        root.GetProperty("version").GetString().ShouldBe("0.5.0");
         root.GetProperty("home").GetString().ShouldBe(_home);
         root.GetProperty("worker").GetProperty("running").GetBoolean().ShouldBeFalse();
         root.GetProperty("worker").GetProperty("port").GetInt32().ShouldBe(47991);

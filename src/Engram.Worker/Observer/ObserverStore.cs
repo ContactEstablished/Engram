@@ -222,6 +222,60 @@ internal sealed class ObserverStore(Database database, TimeProvider time)
         tx.Commit();
     }
 
+    /// <summary>The note a <c>summarize-note</c> job is for, or null when it was deleted (forget) in the meantime.</summary>
+    public NoteInput? LoadNote(JobRow job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        if (!long.TryParse(job.PromptId, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+        {
+            return null;
+        }
+
+        using var c = database.Open();
+        var row = c.QuerySingleOrDefault<(long Id, string? Name, string? Branch, string Type, string Title, string Text, string? Source, long TitleGiven, long TypeGiven)>(
+            """
+            SELECT o.id, p.name, o.branch, o.type, o.title, n.text, n.source, n.title_given, n.type_given
+            FROM notes n JOIN observations o ON o.id = n.observation_id LEFT JOIN projects p ON p.id = o.project_id
+            WHERE n.observation_id = @id
+            """,
+            new { id });
+        return row.Id == 0 ? null : new NoteInput(row.Id, row.Name ?? "unknown", row.Branch, row.Type, row.Title, row.Text, row.Source, row.TitleGiven != 0, row.TypeGiven != 0);
+    }
+
+    /// <summary>
+    /// Replaces a note's provisional narrative with the summary (keeping a title and type the caller gave), drops its
+    /// vector so it is embedded again from the summary, and completes the job, in one transaction.
+    /// </summary>
+    public void SaveNoteSummary(JobRow job, NoteInput note, Observation summary, string provider, string model)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(note);
+        ArgumentNullException.ThrowIfNull(summary);
+        using var c = database.Open();
+        using var tx = c.BeginTransaction();
+        var now = Now();
+        c.Execute(
+            """
+            UPDATE observations SET type = @type, title = @title, narrative = @narrative, facts = @facts, files = @files, model = @model
+            WHERE id = @id
+            """,
+            new
+            {
+                id = note.ObservationId,
+                type = note.TypeGiven ? note.Type : summary.Type,
+                title = note.TitleGiven ? note.Title : summary.Title,
+                narrative = summary.Narrative,
+                facts = ToJson(summary.Facts),
+                files = ToJson(summary.Files),
+                model = $"{provider}/{model}",
+            },
+            tx);
+        c.Execute("UPDATE notes SET summarized_at = @now WHERE observation_id = @id", new { id = note.ObservationId, now }, tx);
+        c.Execute("DELETE FROM observation_vectors WHERE observation_id = @id", new { id = note.ObservationId }, tx);
+        c.Execute("UPDATE jobs SET status = 'done', last_error = NULL, updated_at = @now WHERE id = @id", new { id = job.Id, now }, tx);
+        tx.Commit();
+    }
+
     private static string ToJson<T>(IReadOnlyList<T> items) => JsonSerializer.Serialize(items);
 
     private static string[] ParseList(string json)

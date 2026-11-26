@@ -12,6 +12,11 @@ internal sealed record ObservationRow(long Id, string Type, string Title, string
 
 internal sealed record SummaryRow(string SessionId, string Kind, string Request, string Investigated, string Learned, string Completed, string NextSteps, string? Branch, string CreatedAt);
 
+/// <summary>A note as <c>engram save</c> sent it (text already redacted).</summary>
+internal sealed record NoteText(string Text, string? Source, bool TitleGiven, bool TypeGiven, string? ClientId);
+
+internal sealed record NoteRow(long Id, string Text, string? Source, string? SummarizedAt);
+
 internal sealed record SearchQuery(string Text, long? ProjectId, string? Type, string? Since, string? Branch, int Limit);
 
 /// <summary>Reads (and the two writes: save, forget) behind injection and the MCP tools.</summary>
@@ -196,6 +201,69 @@ internal sealed partial class MemoryStore(Database database, TimeProvider time)
             tx);
         tx.Commit();
         return id;
+    }
+
+    /// <summary>
+    /// Stores a note from <c>engram save</c>: an observation whose narrative is a provisional clip of the text until
+    /// the summarizer replaces it, the full text in <c>notes</c>, and a <c>summarize-note</c> job, in one transaction.
+    /// A <see cref="NoteText.ClientId"/> seen before returns the existing note instead of storing a second copy.
+    /// </summary>
+    public (long Id, bool Existing) SaveNote(long projectId, string platform, string cwd, string? branch, Observation provisional, NoteText note, DateTimeOffset createdAt)
+    {
+        ArgumentNullException.ThrowIfNull(provisional);
+        ArgumentNullException.ThrowIfNull(note);
+        using var c = database.Open();
+        using var tx = c.BeginTransaction();
+        if (note.ClientId is not null && c.ExecuteScalar<long?>("SELECT observation_id FROM notes WHERE client_id = @id", new { id = note.ClientId }, tx) is { } existing)
+        {
+            return (existing, true);
+        }
+
+        var now = ObserverStore.Iso(time.GetUtcNow());
+        var created = ObserverStore.Iso(createdAt);
+        var sessionId = string.Create(CultureInfo.InvariantCulture, $"engram-manual:{projectId}");
+        c.Execute(
+            """
+            INSERT INTO sessions (id, project_id, agent, platform, cwd, branch, started_at, last_seen_at)
+            VALUES (@sessionId, @projectId, 'manual', @platform, @cwd, @branch, @now, @now)
+            ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at
+            """,
+            new { sessionId, projectId, platform, cwd, branch, now },
+            tx);
+        var id = c.ExecuteScalar<long>(
+            """
+            INSERT INTO observations (session_id, project_id, type, title, narrative, facts, files, branch, provider, model, created_at)
+            VALUES (@sessionId, @projectId, @type, @title, @narrative, '[]', '[]', @branch, 'note', 'pending', @created)
+            RETURNING id
+            """,
+            new { sessionId, projectId, type = provisional.Type, title = provisional.Title, narrative = provisional.Narrative, branch, created },
+            tx);
+        c.Execute(
+            """
+            INSERT INTO notes (observation_id, client_id, text, source, title_given, type_given, created_at)
+            VALUES (@id, @clientId, @text, @source, @titleGiven, @typeGiven, @created)
+            """,
+            new { id, clientId = note.ClientId, text = note.Text, source = note.Source, titleGiven = note.TitleGiven, typeGiven = note.TypeGiven, created },
+            tx);
+        c.Execute(
+            """
+            INSERT INTO jobs (kind, session_id, prompt_id, next_run_at, created_at, updated_at)
+            VALUES (@kind, @sessionId, @promptId, @now, @now, @now)
+            """,
+            new { kind = JobKinds.SummarizeNote, sessionId, promptId = id.ToString(CultureInfo.InvariantCulture), now },
+            tx);
+        tx.Commit();
+        return (id, false);
+    }
+
+    /// <summary>The note behind each of <paramref name="ids"/> that is one (saved with <c>engram save</c>).</summary>
+    public IReadOnlyDictionary<long, NoteRow> Notes(IReadOnlyList<long> ids)
+    {
+        using var c = database.Open();
+        return c.Query<NoteRow>(
+                "SELECT observation_id AS Id, text AS Text, source AS Source, summarized_at AS SummarizedAt FROM notes WHERE observation_id IN @ids",
+                new { ids })
+            .ToDictionary(n => n.Id);
     }
 
     /// <summary>Deletes one observation (the FTS trigger removes its index entry). Returns false if it didn't exist.</summary>

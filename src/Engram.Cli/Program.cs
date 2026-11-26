@@ -19,6 +19,8 @@ internal static class Program
                                                     Turn Engram on for projects (merges hooks into .claude/settings.local.json)
           engram disable [FOLDER...]                Turn it off again (removes only Engram's entries)
           engram state [FOLDER...] [--json]         Is Engram on for these folders, and are its hooks current? (read-only)
+          engram save --folder DIR [--title T] [--type T] [--source S] [--json]  < note.txt
+                                                    Save a note (e.g. a decision record) to a project's memory; summarized, full text kept
           engram recent [--limit N]                 Show the latest observations and session summaries
           engram search WORDS [--all] [--keyword|--semantic] [--type T] [--since 14d] [--limit N]
                                                     Search memory of the current repo (or all repos)
@@ -69,6 +71,7 @@ internal static class Program
                 ["status"] => StatusCommand.Run(Environment.GetEnvironmentVariable, Console.Out),
                 ["status", "--json"] => StatusCommand.RunJson(Environment.GetEnvironmentVariable, Console.Out),
                 ["recent", .. var recentArgs] => RecentCommand.Run(recentArgs, Environment.GetEnvironmentVariable, Console.Out),
+                ["save", .. var saveArgs] => SaveCommand.Run(saveArgs, Environment.GetEnvironmentVariable, Console.Out, Console.Error),
                 ["enable", .. var enableArgs] => EnableCommand.Run("enable", enableArgs, Environment.GetEnvironmentVariable, Console.Out, Console.Error, Console.In),
                 ["state", .. var stateArgs] => EnableCommand.Run("state", stateArgs, Environment.GetEnvironmentVariable, Console.Out, Console.Error, Console.In),
                 ["disable", .. var disableArgs] => EnableCommand.Run("disable", disableArgs, Environment.GetEnvironmentVariable, Console.Out, Console.Error, Console.In),

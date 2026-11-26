@@ -77,8 +77,9 @@ internal static class StatsEndpoint
             using var c = database.Open();
             var observations = c.Query(
                 """
-                SELECT o.id, o.type, o.title, o.narrative, o.facts, o.files, o.branch, o.created_at, p.name AS project
-                FROM observations o LEFT JOIN projects p ON p.id = o.project_id
+                SELECT o.id, o.type, o.title, o.narrative, o.facts, o.files, o.branch, o.created_at, p.name AS project,
+                       n.source AS source, CASE WHEN n.observation_id IS NULL THEN NULL WHEN n.summarized_at IS NULL THEN 'pending' ELSE 'done' END AS note
+                FROM observations o LEFT JOIN projects p ON p.id = o.project_id LEFT JOIN notes n ON n.observation_id = o.id
                 ORDER BY o.id DESC LIMIT @limit
                 """,
                 new { limit });

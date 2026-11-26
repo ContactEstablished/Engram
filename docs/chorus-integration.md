@@ -1,4 +1,4 @@
-# Engram ↔ Chorus integration contract (Engram 0.4.0)
+# Engram ↔ Chorus integration contract (Engram 0.5.0)
 
 What Chorus calls, and exactly what comes back. Chorus's parser and tests should be written against this file.
 Every command below finishes without input; none prints the worker token.
@@ -29,10 +29,10 @@ Prints the bare version (`0.4.0`), exit 0.
 One JSON object on one line. **Always exits 0**; whether the worker runs is in the JSON. Never starts the worker.
 
 ```json
-{"version":"0.4.0","home":"C:\\Users\\me\\.engram",
- "worker":{"running":true,"port":47613,"version":"0.4.0","schema":3,"binary":"C:\\Users\\me\\AppData\\Local\\Engram\\bin\\engram-worker.exe"},
+{"version":"0.5.0","home":"C:\\Users\\me\\.engram",
+ "worker":{"running":true,"port":47613,"version":"0.5.0","schema":4,"binary":"C:\\Users\\me\\AppData\\Local\\Engram\\bin\\engram-worker.exe"},
  "token_present":true,"token_path":"C:\\Users\\me\\.engram\\token","token_in_environment":false,
- "observations":1234,"sessions":56,"vectors":1234,"spooled":0,"warnings":[]}
+ "observations":1234,"sessions":56,"vectors":1234,"spooled":0,"spooled_notes":0,"warnings":[]}
 ```
 
 | Field | Meaning |
@@ -45,6 +45,7 @@ One JSON object on one line. **Always exits 0**; whether the worker runs is in t
 | `token_in_environment` | This process's `ENGRAM_TOKEN` equals the token. Chorus injects the token itself, so this is informational. |
 | `observations`, `sessions`, `vectors` | `null` when the worker isn't running |
 | `spooled` | SessionStart payloads waiting for the worker |
+| `spooled_notes` | Notes from `engram save` waiting for the worker (0.5.0) |
 | `warnings` | Settings problems (bad `settings.json` values) |
 
 ## `engram enable` / `engram disable`
@@ -110,6 +111,70 @@ Read-only and quick (runs git a couple of times per folder); never starts the wo
 
 A folder that doesn't exist: `{"folder":"...","error":"... is not a folder."}` and exit 1. Otherwise exit 0.
 
+## `engram save` (0.5.0)
+
+Stores a note (for Chorus: the Arbiter's memory note) in a project's memory. The summarizer condenses it like a
+captured turn; the full text is kept.
+
+```text
+engram save --folder <path> [--title <text>] [--type <type>] [--source <text>] [--json]   < note (UTF-8 on stdin)
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--folder` | Required. The project folder; identity comes from the same code as `state` and the worker, so a worktree's note lands in its repository's memory. Must exist. In WSL, pass the Linux path and call the WSL binary (a `\\wsl...` path given to the Windows binary is refused). |
+| `--title` | Keep this title. Without it the note gets a provisional title (first sentence of its first line, Markdown marks removed), replaced by the summary's title. Clipped to 120 characters. |
+| `--type` | Keep this type. **Allowed: `decision`, `bugfix`, `feature`, `change`, `discovery`, `gotcha`** (case-insensitive). Without it the summarizer picks; until then the note is `discovery`. |
+| `--source` | Free text recorded with the note and shown with it (`engram show`, `get_observations`, `engram recent`), e.g. `chorus-council run 42`. Clipped to 200 characters. |
+| `--json` | One JSON object on one line on stdout. Messages for people go to stderr. |
+
+**Text:** stdin, UTF-8 (a BOM is ignored), trimmed. Empty is an error. **Limit: 256 KiB = 262144 bytes of UTF-8.**
+If stdin is a terminal, it's an error rather than a prompt.
+
+**Success (exit 0):**
+
+```json
+{"id":17,"project":"github.com/owner/repo","spooled":false,"summarized":"queued","title":"Test ruling","type":"decision","warnings":[]}
+{"id":null,"project":"github.com/owner/repo","spooled":true,"summarized":"pending","title":null,"type":null,"warnings":[]}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `id` | The observation id (a number; `engram show 17`). `null` when spooled: the id exists once the worker stores it. |
+| `project` | The project identity the note was filed under (as in `state`). |
+| `spooled` | `true`: the worker wasn't running (or didn't accept the note), so it went to `~/.engram/spool/notes/` and is stored when the worker next starts. `engram save` never starts the worker. |
+| `summarized` | `queued`: stored; the summarizer will condense it. `pending`: spooled; stored and summarized after the worker starts. `done` is reserved (0.5.0 never returns it: summaries always run in the background). |
+| `title`, `type` | What the note has now. Live: the given values, or the provisional title and `discovery`, both replaced by the summary's unless given. Spooled: the given values, or `null`. |
+| `warnings` | Didn't stop the save, e.g. `the summarizer is off (observer.provider = none); ...`, or `the worker answered HTTP 401 ...; the note was spooled instead`. |
+
+**Failure (exit 1):** `{"error":"..."}`. The messages:
+
+- `the note is empty (pass its text on stdin)`
+- `the note is over the 256 KiB limit (262144 bytes of UTF-8)`
+- `<folder> is not a folder.`
+- `--folder is required (the project the note belongs to)`
+- `unknown type 'opinion'; allowed: decision, bugfix, feature, change, discovery, gotcha`
+- `pass the note's text on stdin (engram save never prompts)`
+- `unknown option '--x' (see engram save --help)`, `--title needs a value`, ...
+
+**What happens to the note:**
+
+- The same redaction as captured turns runs before anything is stored or sent to the summarizer.
+- The observation (what search and SessionStart context use) holds the summary: a title, up to 5 sentences and
+  up to 8 facts. The full redacted text is kept and printed by `engram show ID` and `get_observations`.
+- Summaries use the configured observer (Haiku via `claude -p` by default) with a larger input budget than turns
+  (96,000 characters; longer notes keep their start and end). A few-thousand-word ruling fits whole.
+- `ENGRAM_DISABLE` doesn't affect `engram save`. It only silences hook handlers. The summarizer's own `claude -p`
+  runs set it and load no hooks, so they never capture themselves.
+- The token is read from `~/.engram/token`; `ENGRAM_TOKEN` isn't needed, and the token is never printed or spooled.
+- A retried or re-spooled save is stored once (each call carries a unique id).
+
+**WSL**, with stdin passed through:
+
+```text
+wsl.exe -d <distro> -e sh -c 'exec "$HOME/.local/bin/engram" "$@"' engram save --folder /home/me/repo --json < note.txt
+```
+
 ## The token and the environment
 
 - Hooks send `Authorization: Bearer $ENGRAM_TOKEN` (Claude Code interpolates it from **its own** environment).
@@ -122,5 +187,6 @@ A folder that doesn't exist: `{"folder":"...","error":"... is not a folder."}` a
 
 ## Versioning
 
-This contract is Engram 0.4.0. Field additions may come in later versions; existing fields and their meanings
+This contract is Engram 0.5.0 (0.5.0 added `engram save`, `status.spooled_notes` and schema v4; CLI JSON is now pure ASCII,
+non-ASCII escaped as `\uXXXX`). Field additions may come in later versions; existing fields and their meanings
 won't change without a major version bump. Check `engram --version` and record it.

@@ -115,6 +115,13 @@ internal sealed partial class JobRunner(
                     store.SaveSummary(job, job.Kind == JobKinds.SummarizeSession ? "final" : "checkpoint", summary.Summary, summary.Provider, summary.Model);
                     LogSummarized(job.Id, job.Kind);
                     break;
+                case JobKinds.SummarizeNote:
+                    var note = store.LoadNote(job) ?? throw new NothingToObserveException("the note was deleted before it was summarized");
+                    var condensed = await observer.SummarizeNoteAsync(note, job.Id, cancellationToken).ConfigureAwait(false);
+                    store.SaveNoteSummary(job, note, condensed.Summary, condensed.Provider, condensed.Model);
+                    embeddingSignal?.Notify();
+                    LogSummarized(job.Id, job.Kind);
+                    break;
                 default:
                     store.Complete(job, $"unknown job kind '{job.Kind}'");
                     break;

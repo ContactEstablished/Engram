@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Engram.Core;
 
 namespace Engram.Worker.Observer;
 
@@ -70,6 +71,18 @@ internal static class OutputParser
 
             return (result.Take(MaxObservations).ToList(), null);
         }
+    }
+
+    /// <summary>A note's summary: the same shape as a turn's observations, exactly one of them.</summary>
+    public static (Observation? Summary, string? Error) ParseNote(string text)
+    {
+        var (observations, error) = ParseObservations(text);
+        return observations switch
+        {
+            null => (null, error),
+            [] => (null, "expected exactly one observation summarizing the note, got none"),
+            [var first, ..] => (first, null),
+        };
     }
 
     public static (SessionSummary? Summary, string? Error) ParseSummary(string text)

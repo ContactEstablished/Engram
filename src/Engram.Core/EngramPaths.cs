@@ -35,6 +35,9 @@ public static class EngramPaths
     /// <summary>Hook payloads that couldn't reach the worker; the worker ingests them when it starts.</summary>
     public static string Spool(string home) => Path.Combine(home, "spool");
 
+    /// <summary>Notes from <c>engram save</c> made while the worker was down; stored when it next starts.</summary>
+    public static string NoteSpool(string home) => Path.Combine(Spool(home), "notes");
+
     /// <summary>Working folder for summarizer runs. Events whose cwd is inside it are dropped.</summary>
     public static string ObserverSandbox(string home) => Path.Combine(home, "observer-sandbox");
 

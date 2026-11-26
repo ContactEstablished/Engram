@@ -296,11 +296,14 @@ internal static class EnableCommand
         NullableString(w, "worktree_of", worktreeOf);
     });
 
-    /// <summary>One compact JSON object (a single line), non-ASCII kept readable.</summary>
+    /// <summary>
+    /// One compact JSON object (a single line), pure ASCII: non-ASCII is escaped (<c>\uXXXX</c>), so Windows console code pages
+    /// can't mangle it when another program reads our stdout.
+    /// </summary>
     internal static string Json(Action<Utf8JsonWriter> body)
     {
         using var buffer = new MemoryStream();
-        using (var w = new Utf8JsonWriter(buffer, new JsonWriterOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+        using (var w = new Utf8JsonWriter(buffer, new JsonWriterOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default }))
         {
             w.WriteStartObject();
             body(w);

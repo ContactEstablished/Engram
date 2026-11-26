@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Engram.Core;
 using Engram.Core.Hooks;
 using Engram.Core.Security;
 using Engram.Worker.Capture;
@@ -25,6 +26,7 @@ internal static class MemoryEndpoints
         app.MapGet("/memory/timeline", Timeline);
         app.MapGet("/memory/get", Get);
         app.MapPost("/memory/save", SaveAsync);
+        app.MapPost("/memory/note", NoteAsync);
         app.MapPost("/memory/forget", Forget);
     }
 
@@ -191,10 +193,11 @@ internal static class MemoryEndpoints
         }
 
         var rows = store.Get(ids);
+        var notes = store.Notes([.. rows.Select(r => r.Id)]);
         var sb = new StringBuilder();
         foreach (var row in rows)
         {
-            sb.Append(FullRecord(row)).Append('\n');
+            sb.Append(FullRecord(row, notes.GetValueOrDefault(row.Id))).Append('\n');
         }
 
         var missing = ids.Except(rows.Select(r => r.Id)).ToList();
@@ -246,6 +249,37 @@ internal static class MemoryEndpoints
         return Text(string.Create(CultureInfo.InvariantCulture, $"Saved as #{id} ({type}) for this repository (project \"{project.Name}\")."));
     }
 
+    /// <summary><c>engram save</c>: stores a note and queues its summary. JSON in, JSON out (<c>{"error": ...}</c> with 400).</summary>
+    private static async Task<IResult> NoteAsync(HttpContext http, WorkerContext context, NoteService notes)
+    {
+        if (!Authorized(http, context))
+        {
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+        }
+
+        using var buffer = new MemoryStream();
+        await http.Request.Body.CopyToAsync(buffer, http.RequestAborted).ConfigureAwait(false);
+        if (buffer.Length > HookEndpoints.MaxBodyBytes)
+        {
+            return Error("the request is too large");
+        }
+
+        NoteRequest request;
+        try
+        {
+            request = NoteRequest.Parse(buffer.ToArray());
+        }
+        catch (JsonException)
+        {
+            return Error("the request is not a JSON object");
+        }
+
+        var (saved, error) = notes.Save(request);
+        return saved is null ? Error(error ?? "the note could not be saved") : Results.Text(NoteService.ToJson(saved), "application/json", Encoding.UTF8);
+
+        static IResult Error(string message) => Results.Json(new Dictionary<string, string> { ["error"] = message }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
     private static IResult Forget(HttpContext http, WorkerContext context, MemoryStore store, VectorIndex vectors)
     {
         if (!Authorized(http, context))
@@ -270,10 +304,14 @@ internal static class MemoryEndpoints
         return $"#{o.Id} {o.Type,-9} {Date(o.CreatedAt, "yyyy-MM-dd")}  {where}{OneLine(o.Title)}{fileText}";
     }
 
-    internal static string FullRecord(ObservationRow o)
+    /// <summary>One observation in full. For a saved note, also where it came from and its whole original text.</summary>
+    internal static string FullRecord(ObservationRow o, NoteRow? note = null)
     {
+        var origin = note is not null
+            ? $" | saved note{(note.Source is null ? string.Empty : " from " + note.Source)}{(note.SummarizedAt is null ? " (summary pending)" : string.Empty)}"
+            : o.Provider == "manual" ? " | saved on request" : string.Empty;
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"#{o.Id} {o.Type} | {Date(o.CreatedAt, "yyyy-MM-dd HH:mm")} | repo {o.Project ?? "?"}{(o.Branch is null ? string.Empty : " | branch " + o.Branch)}{(o.Provider == "manual" ? " | saved on request" : string.Empty)}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"#{o.Id} {o.Type} | {Date(o.CreatedAt, "yyyy-MM-dd HH:mm")} | repo {o.Project ?? "?"}{(o.Branch is null ? string.Empty : " | branch " + o.Branch)}{origin}\n");
         sb.Append(OneLine(o.Title)).Append('\n');
         sb.Append(o.Narrative.Trim()).Append('\n');
         var facts = Files(o.Facts);
@@ -286,6 +324,11 @@ internal static class MemoryEndpoints
         if (files.Count > 0)
         {
             sb.Append("Files: ").Append(string.Join(", ", files)).Append('\n');
+        }
+
+        if (note is not null)
+        {
+            sb.Append("Full note:\n").Append(note.Text.Trim()).Append('\n');
         }
 
         return sb.ToString();
