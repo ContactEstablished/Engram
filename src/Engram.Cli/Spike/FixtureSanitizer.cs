@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Engram.Core.Security;
 
 namespace Engram.Cli.Spike;
 
@@ -50,15 +51,7 @@ internal sealed partial class FixtureSanitizer
 
     public string SanitizeString(string value)
     {
-        var s = PrivateKeyRegex().Replace(value, "<REDACTED:private-key>");
-        s = AnthropicKeyRegex().Replace(s, Redacted);
-        s = OpenAiStyleKeyRegex().Replace(s, Redacted);
-        s = GitHubTokenRegex().Replace(s, Redacted);
-        s = AwsKeyRegex().Replace(s, Redacted);
-        s = SlackTokenRegex().Replace(s, Redacted);
-        s = JwtRegex().Replace(s, Redacted);
-        s = BearerRegex().Replace(s, "${prefix}" + Redacted);
-        s = KeyValueSecretRegex().Replace(s, "${prefix}${quote}" + Redacted);
+        var s = Redactor.RedactSecrets(value);
         s = EmailRegex().Replace(s, m => m.Value.StartsWith("git@", StringComparison.OrdinalIgnoreCase) ? m.Value : Email);
         s = WindowsHomeRegex().Replace(s, Home);
         s = UnixHomeRegex().Replace(s, Home);
@@ -100,16 +93,9 @@ internal sealed partial class FixtureSanitizer
     /// </summary>
     public static IReadOnlyList<string> FindLeaks(string text)
     {
-        var leaks = new List<string>();
-        Regex[] patterns =
-        [
-            PrivateKeyRegex(), AnthropicKeyRegex(), OpenAiStyleKeyRegex(), GitHubTokenRegex(), AwsKeyRegex(),
-            SlackTokenRegex(), JwtRegex(), WindowsHomeRegex(), UnixHomeRegex(),
-        ];
-        foreach (var pattern in patterns)
-        {
-            leaks.AddRange(pattern.Matches(text).Select(m => m.Value));
-        }
+        var leaks = new List<string>(Redactor.FindSecrets(text));
+        leaks.AddRange(WindowsHomeRegex().Matches(text).Select(m => m.Value));
+        leaks.AddRange(UnixHomeRegex().Matches(text).Select(m => m.Value));
 
         leaks.AddRange(EmailRegex().Matches(text).Select(m => m.Value).Where(v => !v.StartsWith("git@", StringComparison.OrdinalIgnoreCase)));
         return leaks;
@@ -123,34 +109,6 @@ internal sealed partial class FixtureSanitizer
     // /home/name, /Users/name (macOS). Must not re-match the tail of a Windows path already replaced.
     [GeneratedRegex(@"(?<![A-Za-z0-9>])/(?:home|Users)/(?<user>[^/""'\s<>:]+)", RegexOptions.CultureInvariant)]
     private static partial Regex UnixHomeRegex();
-
-    [GeneratedRegex(@"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----", RegexOptions.CultureInvariant)]
-    private static partial Regex PrivateKeyRegex();
-
-    [GeneratedRegex(@"sk-ant-[A-Za-z0-9_\-]{10,}", RegexOptions.CultureInvariant)]
-    private static partial Regex AnthropicKeyRegex();
-
-    [GeneratedRegex(@"\bsk-(?:proj-|or-v1-|live_|test_)?[A-Za-z0-9_\-]{20,}", RegexOptions.CultureInvariant)]
-    private static partial Regex OpenAiStyleKeyRegex();
-
-    [GeneratedRegex(@"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})", RegexOptions.CultureInvariant)]
-    private static partial Regex GitHubTokenRegex();
-
-    [GeneratedRegex(@"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", RegexOptions.CultureInvariant)]
-    private static partial Regex AwsKeyRegex();
-
-    [GeneratedRegex(@"\bxox[abprs]-[A-Za-z0-9-]{10,}", RegexOptions.CultureInvariant)]
-    private static partial Regex SlackTokenRegex();
-
-    [GeneratedRegex(@"\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}", RegexOptions.CultureInvariant)]
-    private static partial Regex JwtRegex();
-
-    [GeneratedRegex(@"(?<prefix>\bbearer\s+)[A-Za-z0-9._~+/\-=]{12,}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex BearerRegex();
-
-    // password=..., Pwd=..., AccountKey=..., api_key: ..., secret=..., token=... (connection strings, env files, CLI args)
-    [GeneratedRegex(@"(?<prefix>\b(?:password|passwd|pwd|accountkey|sharedaccesskey|client_secret|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)(?<quote>[""']?)[^;""'\s,}]{4,}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex KeyValueSecretRegex();
 
     [GeneratedRegex(@"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex EmailRegex();
