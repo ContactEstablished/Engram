@@ -15,6 +15,18 @@ Files in this folder:
 
 Results go in `docs/phase0-findings.md`.
 
+## Quick start (replaces A1-A4 and B1-B4)
+
+```powershell
+pwsh spike/install.ps1 -Wsl          # add -DryRun to preview; -SkipBuild to reuse binaries; -Yes to skip the PATH prompt
+# open a NEW terminal, then:
+pwsh spike/start-session.ps1         # Windows: variables + listener + claude in the sandbox
+wsl -e bash -lc engram-spike-session # WSL: same, inside Ubuntu
+```
+
+Then follow A5 (the prompt table) in each session, and Part C. The manual steps below are the same
+thing spelled out, in case the script needs debugging.
+
 ---
 
 ## Part A: Windows
