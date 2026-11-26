@@ -85,6 +85,114 @@ internal static class StatusCommand
         }
     }
 
+    /// <summary>
+    /// <c>engram status --json</c>: one JSON object for programs (Chorus). Always exits 0; whether the worker runs is
+    /// in the JSON. Never prints the token.
+    /// </summary>
+    public static int RunJson(Func<string, string?> getEnv, TextWriter output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        var home = EngramPaths.Home(getEnv);
+        var (settings, warnings) = SettingsLoader.Load(home, getEnv);
+        var port = settings.Worker.Port;
+        var token = WorkerToken.Read(home);
+        var (status, health) = WorkerClient.Get(port, "/health", Timeout);
+        var running = status == 200;
+        string? workerVersion = null;
+        long? schema = null;
+        if (running && health is not null)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(health);
+                workerVersion = doc.RootElement.TryGetProperty("version", out var v) ? v.GetString() : null;
+                schema = doc.RootElement.TryGetProperty("schema", out var s) && s.TryGetInt64(out var n) ? n : null;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // An older worker: running, version unknown.
+            }
+        }
+
+        long? observations = null, sessions = null, vectors = null;
+        if (running && token is not null && WorkerClient.Get(port, "/stats", Timeout, token) is (200, { } stats))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(stats);
+                var counts = doc.RootElement.TryGetProperty("counts", out var c) ? c : default;
+                observations = counts.ValueKind == System.Text.Json.JsonValueKind.Object && counts.TryGetProperty("observations", out var o) ? o.GetInt64() : null;
+                sessions = counts.ValueKind == System.Text.Json.JsonValueKind.Object && counts.TryGetProperty("sessions", out var se) ? se.GetInt64() : null;
+                vectors = doc.RootElement.TryGetProperty("search", out var sr) && sr.TryGetProperty("vectors", out var ve) ? ve.GetInt64() : null;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Leave the counts null.
+            }
+        }
+
+        var spooled = Directory.Exists(EngramPaths.Spool(home)) ? Directory.GetFiles(EngramPaths.Spool(home), "*.json").Length : 0;
+        output.WriteLine(EnableCommand.Json(w =>
+        {
+            w.WriteString("version", typeof(StatusCommand).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
+            w.WriteString("home", home);
+            w.WriteStartObject("worker");
+            w.WriteBoolean("running", running);
+            w.WriteNumber("port", port);
+            Nullable(w, "version", workerVersion);
+            if (schema is { } sc)
+            {
+                w.WriteNumber("schema", sc);
+            }
+            else
+            {
+                w.WriteNull("schema");
+            }
+
+            Nullable(w, "binary", WorkerLauncher.Locate(getEnv));
+            w.WriteEndObject();
+            w.WriteBoolean("token_present", token is not null);
+            w.WriteString("token_path", EngramPaths.TokenFile(home));
+            w.WriteBoolean("token_in_environment", token is not null && getEnv(WorkerToken.EnvironmentVariable) == token);
+            Count(w, "observations", observations);
+            Count(w, "sessions", sessions);
+            Count(w, "vectors", vectors);
+            w.WriteNumber("spooled", spooled);
+            w.WriteStartArray("warnings");
+            foreach (var warning in warnings)
+            {
+                w.WriteStringValue(warning);
+            }
+
+            w.WriteEndArray();
+        }));
+        return 0;
+
+        static void Nullable(System.Text.Json.Utf8JsonWriter w, string name, string? value)
+        {
+            if (value is null)
+            {
+                w.WriteNull(name);
+            }
+            else
+            {
+                w.WriteString(name, value);
+            }
+        }
+
+        static void Count(System.Text.Json.Utf8JsonWriter w, string name, long? value)
+        {
+            if (value is { } v)
+            {
+                w.WriteNumber(name, v);
+            }
+            else
+            {
+                w.WriteNull(name);
+            }
+        }
+    }
+
     public static int StopWorker(Func<string, string?> getEnv, TextWriter output)
     {
         ArgumentNullException.ThrowIfNull(output);

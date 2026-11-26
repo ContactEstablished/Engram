@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Engram.Core;
 using Engram.Core.Hooks;
+using Engram.Core.Projects;
 using Engram.Core.Security;
 using Engram.Core.Settings;
 using Engram.Worker.Storage;

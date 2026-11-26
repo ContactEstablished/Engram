@@ -213,7 +213,9 @@ public sealed class EnableTests : IDisposable
         var trees = _enabler.ExpandWorktrees(repo);
 
         trees.Count.ShouldBe(2);
-        foreach (var tree in trees)
+        trees[0].ShouldBe((repo, null));
+        trees[1].WorktreeOf.ShouldBe(Path.GetFullPath(repo));
+        foreach (var (tree, _) in trees)
         {
             _enabler.Enable(tree, McpMode.None, dryRun: false);
             File.Exists(Path.Combine(tree, ".claude", "settings.local.json")).ShouldBeTrue(tree);
@@ -284,19 +286,19 @@ public sealed class EnableTests : IDisposable
         Func<string, string?> env = name => name == "ENGRAM_HOME" ? _temp.Combine("home") : null;
         Engram.Core.Security.WorkerToken.ReadOrCreate(_temp.Combine("home"));
 
-        EnableCommand.Run(true, EnableCommand.Parse([a, b, _temp.Combine("missing"), "--mcp", "none"]), env, output, new StringReader("n\n"), _tools, TimeProvider.System).ShouldBe(0);
+        EnableCommand.Run("enable", EnableCommand.Parse([a, b, _temp.Combine("missing"), "--mcp", "none"]), env, output, output, new StringReader("n\n"), false, _tools, TimeProvider.System).ShouldBe(0);
         File.Exists(Path.Combine(a, ".claude", "settings.local.json")).ShouldBeFalse("answered no");
         output.ToString().ShouldContain("SKIP:");
         output.ToString().ShouldContain("Nothing changed.");
 
         var yes = new StringWriter();
-        EnableCommand.Run(true, EnableCommand.Parse([a, b, "--mcp", "none", "--yes"]), env, yes, TextReader.Null, _tools, TimeProvider.System).ShouldBe(0);
+        EnableCommand.Run("enable", EnableCommand.Parse([a, b, "--mcp", "none", "--yes"]), env, yes, yes, TextReader.Null, false, _tools, TimeProvider.System).ShouldBe(0);
         File.Exists(Path.Combine(a, ".claude", "settings.local.json")).ShouldBeTrue();
         File.Exists(Path.Combine(b, ".claude", "settings.local.json")).ShouldBeTrue();
         yes.ToString().ShouldContain("restart the app that launches Claude Code");
 
         var off = new StringWriter();
-        EnableCommand.Run(false, EnableCommand.Parse([a, b, "--yes"]), env, off, TextReader.Null, _tools, TimeProvider.System).ShouldBe(0);
+        EnableCommand.Run("disable", EnableCommand.Parse([a, b, "--yes"]), env, off, off, TextReader.Null, false, _tools, TimeProvider.System).ShouldBe(0);
         File.Exists(Path.Combine(a, ".claude", "settings.local.json")).ShouldBeFalse();
     }
 

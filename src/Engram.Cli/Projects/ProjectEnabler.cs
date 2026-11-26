@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Engram.Core.Projects;
 
 namespace Engram.Cli.Projects;
 
@@ -18,7 +19,21 @@ internal enum McpMode
 }
 
 /// <summary>What happened (or, in a dry run, would happen) in one folder.</summary>
-internal sealed record ProjectChange(string Folder, IReadOnlyList<string> Actions, IReadOnlyList<string> Warnings);
+/// <param name="Folder">The folder.</param>
+/// <param name="Actions">What changed (or would change), in words.</param>
+/// <param name="Warnings">Things to know that did not stop the change.</param>
+/// <param name="Files">Every file that changed (or would change).</param>
+internal sealed record ProjectChange(string Folder, IReadOnlyList<string> Actions, IReadOnlyList<string> Warnings, IReadOnlyList<string> Files);
+
+/// <summary>Read-only view of a folder, for <c>engram state</c>.</summary>
+/// <param name="Folder">The folder.</param>
+/// <param name="Enabled">Engram's hooks are present.</param>
+/// <param name="Mcp"><c>local</c>, <c>file</c> or <c>none</c>.</param>
+/// <param name="HooksOk">All of Engram's hooks are present and match what <c>enable</c> would write now.</param>
+/// <param name="Problems">Why <paramref name="HooksOk"/> is false, or why the settings file can't be read.</param>
+/// <param name="WorktreeOf">The main working tree, when this folder is a linked git worktree.</param>
+/// <param name="Project">The identity Engram keys memory on (normalized git remote, else repo or folder).</param>
+internal sealed record ProjectState(string Folder, bool Enabled, string Mcp, bool HooksOk, IReadOnlyList<string> Problems, string? WorktreeOf, string Project);
 
 /// <summary>Git and Claude Code, behind an interface so enable/disable can be tested without either.</summary>
 internal interface IProjectTools
@@ -38,7 +53,30 @@ internal sealed class SystemProjectTools : IProjectTools
         return exit == 0 ? output : null;
     }
 
-    public (int ExitCode, string Output) Claude(string dir, params string[] args) => Run("claude", dir, args);
+    public (int ExitCode, string Output) Claude(string dir, params string[] args) =>
+        LocateClaude() is { } claude ? Run(claude, dir, args) : (-1, "claude not found on PATH or in ~/.local/bin");
+
+    /// <summary>
+    /// PATH first, then the native installer's location: under <c>wsl.exe -e</c> (no login shell) ~/.local/bin isn't on PATH.
+    /// </summary>
+    internal static string? LocateClaude()
+    {
+        var names = OperatingSystem.IsWindows() ? new[] { "claude.exe" } : ["claude"];
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var name in names)
+            {
+                var candidate = Path.Combine(dir.Trim(), name);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        var local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin", names[0]);
+        return File.Exists(local) ? local : null;
+    }
 
     private static (int ExitCode, string Output) Run(string file, string dir, IEnumerable<string> args)
     {
@@ -86,47 +124,36 @@ internal sealed class SystemProjectTools : IProjectTools
 /// <summary>
 /// Turns Engram on or off for a project folder: merges the hooks into <c>.claude/settings.local.json</c> (never
 /// overwriting what's there; the original is backed up first), registers the MCP server, and keeps both files out of
-/// git through <c>.git/info/exclude</c> (a local file, so no tracked file changes). Idempotent.
+/// git through <c>.git/info/exclude</c> (a local file, so no tracked file changes). Idempotent. Also the one place
+/// that knows how to tell whether a folder is enabled (<see cref="State"/>).
 /// </summary>
 internal sealed class ProjectEnabler(IProjectTools tools, string home, int port, string toolMatcher, TimeProvider time)
 {
     public const string SettingsRelative = ".claude/settings.local.json";
     public const string McpRelative = ".mcp.json";
 
-    /// <summary>Every working tree of the repo that <paramref name="folder"/> belongs to (including itself), or just the folder.</summary>
-    public IReadOnlyList<string> ExpandWorktrees(string folder)
+    private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    /// <summary>
+    /// Every working tree of the repo that <paramref name="folder"/> belongs to: the folder itself first, then the
+    /// others, each with the main working tree it belongs to (null for the main one and for non-git folders).
+    /// </summary>
+    public IReadOnlyList<(string Folder, string? WorktreeOf)> ExpandWorktrees(string folder)
     {
-        var listing = tools.Git(folder, "worktree", "list", "--porcelain");
-        if (listing is null)
+        var trees = ListWorktrees(folder);
+        if (trees.Count == 0)
         {
-            return [folder];
+            return [(folder, null)];
         }
 
-        var trees = new List<string>();
-        string? current = null;
-        foreach (var line in listing.Split('\n', StringSplitOptions.TrimEntries))
+        var main = trees[0];
+        var result = new List<(string, string?)> { (folder, PathComparer.Equals(Trim(folder), Trim(main)) ? null : main) };
+        foreach (var tree in trees.Where(t => !PathComparer.Equals(Trim(t), Trim(folder))))
         {
-            if (line.StartsWith("worktree ", StringComparison.Ordinal))
-            {
-                current = line[9..];
-            }
-            else if (line is "bare" or "prunable" || line.StartsWith("prunable ", StringComparison.Ordinal))
-            {
-                current = null;
-            }
-            else if (line.Length == 0 && current is not null)
-            {
-                trees.Add(current);
-                current = null;
-            }
+            result.Add((tree, PathComparer.Equals(Trim(tree), Trim(main)) ? null : main));
         }
 
-        if (current is not null)
-        {
-            trees.Add(current);
-        }
-
-        return [.. trees.Select(Path.GetFullPath).Where(Directory.Exists).Prepend(folder).Distinct(PathComparer)];
+        return result;
     }
 
     public ProjectChange Enable(string folder, McpMode mcp, bool dryRun)
@@ -134,6 +161,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         CheckFolder(folder);
         var actions = new List<string>();
         var warnings = new List<string>();
+        var files = new List<string>();
         WarnIfNotRepoRoot(folder, warnings);
 
         var settingsPath = Path.Combine(folder, ".claude", "settings.local.json");
@@ -147,6 +175,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         }
         else
         {
+            files.Add(settingsPath);
             actions.Add(existed
                 ? $"merge Engram's hooks into the existing {SettingsRelative} (other settings kept; backup in ~/.engram/backups/enable)"
                 : $"create {SettingsRelative} with Engram's hooks");
@@ -170,12 +199,17 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
                 break;
             case McpMode.File:
                 exclude.Add(McpRelative);
-                WriteMcpFile(folder, dryRun, actions);
+                WriteMcpFile(folder, dryRun, actions, files);
                 break;
         }
 
-        KeepOutOfGit(folder, exclude, dryRun, actions, warnings);
-        return new ProjectChange(folder, actions, warnings);
+        KeepOutOfGit(folder, exclude, dryRun, actions, warnings, files);
+        if (!dryRun)
+        {
+            ProjectRegistry.Set(home, folder, mcp switch { McpMode.Local => "local", McpMode.File => "file", _ => "none" });
+        }
+
+        return new ProjectChange(folder, actions, warnings, files);
     }
 
     public ProjectChange Disable(string folder, bool dryRun)
@@ -183,6 +217,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         CheckFolder(folder);
         var actions = new List<string>();
         var warnings = new List<string>();
+        var files = new List<string>();
 
         var settingsPath = Path.Combine(folder, ".claude", "settings.local.json");
         if (File.Exists(settingsPath))
@@ -193,22 +228,23 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
             {
                 actions.Add($"no Engram hooks in {SettingsRelative}");
             }
-            else if (root.Count == 0)
-            {
-                actions.Add($"remove {SettingsRelative} (it held only Engram's hooks)");
-                if (!dryRun)
-                {
-                    Backup(settingsPath, existed: true);
-                    File.Delete(settingsPath);
-                }
-            }
             else
             {
-                actions.Add($"remove {removed} Engram hook(s) from {SettingsRelative} (other settings kept)");
+                files.Add(settingsPath);
+                actions.Add(root.Count == 0
+                    ? $"remove {SettingsRelative} (it held only Engram's hooks)"
+                    : $"remove {removed} Engram hook(s) from {SettingsRelative} (other settings kept)");
                 if (!dryRun)
                 {
                     Backup(settingsPath, existed: true);
-                    WriteJson(settingsPath, root);
+                    if (root.Count == 0)
+                    {
+                        File.Delete(settingsPath);
+                    }
+                    else
+                    {
+                        WriteJson(settingsPath, root);
+                    }
                 }
             }
         }
@@ -228,6 +264,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
                     mcpRoot.Remove("mcpServers");
                 }
 
+                files.Add(mcpPath);
                 actions.Add(mcpRoot.Count == 0 ? $"remove {McpRelative} (it held only Engram)" : $"remove the engram server from {McpRelative}");
                 if (!dryRun)
                 {
@@ -243,32 +280,140 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
             }
         }
 
-        var (exit, output) = dryRun ? (0, string.Empty) : tools.Claude(folder, "mcp", "remove", "engram", "--scope", "local");
         if (dryRun)
         {
             actions.Add("remove the engram MCP server from Claude Code's local scope for this project (if present)");
         }
-        else if (exit == 0)
+        else
         {
-            actions.Add("removed the engram MCP server (local scope)");
-        }
-        else if (exit == -1)
-        {
-            warnings.Add("couldn't run `claude` to remove the MCP server: " + output);
+            var (exit, output) = tools.Claude(folder, "mcp", "remove", "engram", "--scope", "local");
+            if (exit == 0)
+            {
+                actions.Add("removed the engram MCP server (local scope)");
+            }
+            else if (exit == -1)
+            {
+                warnings.Add("couldn't run `claude` to remove the MCP server: " + output);
+            }
+
+            ProjectRegistry.Remove(home, folder);
         }
 
-        return new ProjectChange(folder, actions, warnings);
+        return new ProjectChange(folder, actions, warnings, files);
+    }
+
+    /// <summary>Whether Engram is on for <paramref name="folder"/>, and whether its hooks are complete and current. Never writes.</summary>
+    public ProjectState State(string folder)
+    {
+        CheckFolder(folder);
+        var problems = new List<string>();
+        var enabled = false;
+        var hooksOk = false;
+        var settingsPath = Path.Combine(folder, ".claude", "settings.local.json");
+        try
+        {
+            var actual = ReadJson(settingsPath, out _);
+            var registered = HookSettings.RegisteredEvents(actual);
+            enabled = registered.Count > 0;
+            if (enabled)
+            {
+                var expected = new JsonObject();
+                HookSettings.Apply(expected, port, toolMatcher);
+                foreach (var name in HookSettings.Events)
+                {
+                    var want = EngramGroups(expected, name);
+                    var have = EngramGroups(actual, name);
+                    if (have.Count == 0)
+                    {
+                        problems.Add($"missing the {name} hook");
+                    }
+                    else if (have.Count > 1 || have[0] != want[0])
+                    {
+                        problems.Add($"the {name} hook differs from what enable writes (old port {HookSettings.RegisteredPort(actual)?.ToString(CultureInfo.InvariantCulture) ?? "?"} vs {port}, a changed matcher, or edited by hand)");
+                    }
+                }
+
+                hooksOk = problems.Count == 0;
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            problems.Add(ex.Message);
+        }
+
+        var mcp = McpInFile(folder) ? "file" : ProjectRegistry.Get(home, folder) == "local" ? "local" : "none";
+        var trees = ListWorktrees(folder);
+        var worktreeOf = trees.Count > 0 && !PathComparer.Equals(Trim(trees[0]), Trim(folder)) ? trees[0] : null;
+        return new ProjectState(folder, enabled, mcp, hooksOk, problems, worktreeOf, ProjectIdentity.Resolve(folder).Identity);
     }
 
     // ---- helpers -----------------------------------------------------------------------------------------
 
-    private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private static string Trim(string path) => Path.GetFullPath(path).TrimEnd('/', '\\');
+
+    /// <summary>Engram's groups for one event, serialized, so two settings files can be compared.</summary>
+    private static List<string> EngramGroups(JsonObject root, string name) =>
+        root["hooks"]?[name] is JsonArray groups
+            ? [.. groups.OfType<JsonObject>()
+                .Where(g => g["hooks"] is JsonArray h && h.OfType<JsonObject>().Any(HookSettings.IsEngram))
+                .Select(g => g.ToJsonString())]
+            : [];
+
+    private static bool McpInFile(string folder)
+    {
+        try
+        {
+            var path = Path.Combine(folder, ".mcp.json");
+            return File.Exists(path) && ReadJson(path, out _)["mcpServers"]?["engram"] is not null;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The repo's working trees, main first (paths as git prints them, made absolute). Empty outside git.</summary>
+    private List<string> ListWorktrees(string folder)
+    {
+        var listing = tools.Git(folder, "worktree", "list", "--porcelain");
+        if (listing is null)
+        {
+            return [];
+        }
+
+        var trees = new List<string>();
+        string? current = null;
+        var skip = false;
+        foreach (var line in listing.Split('\n', StringSplitOptions.TrimEntries).Append(string.Empty))
+        {
+            if (line.StartsWith("worktree ", StringComparison.Ordinal))
+            {
+                current = line[9..];
+                skip = false;
+            }
+            else if (line == "bare" || line.StartsWith("prunable", StringComparison.Ordinal))
+            {
+                skip = true;
+            }
+            else if (line.Length == 0 && current is not null)
+            {
+                if (!skip && Directory.Exists(current))
+                {
+                    trees.Add(Path.GetFullPath(current));
+                }
+
+                current = null;
+            }
+        }
+
+        return trees;
+    }
 
     private static void CheckFolder(string folder)
     {
         if (folder.StartsWith(@"\\wsl", StringComparison.OrdinalIgnoreCase) || folder.StartsWith("//wsl", StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentException($"{folder} is inside WSL. Run `engram enable` from inside WSL so the hooks use the WSL worker's port.");
+            throw new ArgumentException($"{folder} is inside WSL. Run engram inside WSL (wsl.exe -e ...) so the hooks use the WSL worker's port.");
         }
 
         if (!Directory.Exists(folder))
@@ -280,7 +425,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
     private void WarnIfNotRepoRoot(string folder, List<string> warnings)
     {
         if (tools.Git(folder, "rev-parse", "--show-toplevel")?.Trim() is { Length: > 0 } top
-            && !PathComparer.Equals(Path.GetFullPath(top).TrimEnd('/', '\\'), Path.GetFullPath(folder).TrimEnd('/', '\\')))
+            && !PathComparer.Equals(Trim(top), Trim(folder)))
         {
             warnings.Add($"{folder} is inside the repo at {top}. Claude Code reads these settings only when started in this folder.");
         }
@@ -323,7 +468,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         }
     }
 
-    private static void WriteJson(string path, JsonObject root)
+    internal static void WriteJson(string path, JsonObject root)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using var buffer = new MemoryStream();
@@ -332,7 +477,9 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
             root.WriteTo(writer);
         }
 
-        File.WriteAllText(path, Encoding.UTF8.GetString(buffer.ToArray()) + "\n", new UTF8Encoding(false));
+        var temp = path + ".engram-tmp";
+        File.WriteAllText(temp, Encoding.UTF8.GetString(buffer.ToArray()) + "\n", new UTF8Encoding(false));
+        File.Move(temp, path, overwrite: true);
     }
 
     private void Backup(string path, bool existed)
@@ -368,11 +515,11 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         }
         else
         {
-            warnings.Add($"couldn't register the MCP server through `claude mcp add` ({(exit == -1 ? "claude not found" : output)}); retry with --mcp file");
+            warnings.Add($"couldn't register the MCP server through `claude mcp add` ({(exit == -1 ? output : output.Split('\n')[0])}); retry with --mcp file");
         }
     }
 
-    private static void WriteMcpFile(string folder, bool dryRun, List<string> actions)
+    private static void WriteMcpFile(string folder, bool dryRun, List<string> actions, List<string> files)
     {
         var path = Path.Combine(folder, ".mcp.json");
         var root = ReadJson(path, out var existed);
@@ -386,6 +533,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         }
 
         servers["engram"] = wanted;
+        files.Add(path);
         actions.Add(existed ? $"add the engram server to the existing {McpRelative}" : $"create {McpRelative} with the engram server (Claude Code asks you to approve it once)");
         if (!dryRun)
         {
@@ -394,7 +542,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
     }
 
     /// <summary>Adds our files to <c>.git/info/exclude</c> (never to a tracked .gitignore) unless git already ignores them.</summary>
-    private void KeepOutOfGit(string folder, List<string> relativePaths, bool dryRun, List<string> actions, List<string> warnings)
+    private void KeepOutOfGit(string folder, List<string> relativePaths, bool dryRun, List<string> actions, List<string> warnings, List<string> files)
     {
         if (tools.Git(folder, "rev-parse", "--git-dir") is null)
         {
@@ -428,13 +576,14 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
             return;
         }
 
+        var full = Path.GetFullPath(Path.IsPathRooted(excludePath) ? excludePath : Path.Combine(folder, excludePath));
+        files.Add(full);
         actions.Add($"add {string.Join(" and ", missing)} to .git/info/exclude (local to this clone; no tracked file changes)");
         if (dryRun)
         {
             return;
         }
 
-        var full = Path.IsPathRooted(excludePath) ? excludePath : Path.Combine(folder, excludePath);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         var existing = File.Exists(full) ? File.ReadAllText(full) : string.Empty;
         var lines = existing.Split('\n', StringSplitOptions.TrimEntries);
@@ -443,5 +592,62 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         {
             File.AppendAllText(full, (existing.Length > 0 && !existing.EndsWith('\n') ? "\n" : string.Empty) + "# Engram (local files)\n" + string.Join('\n', add) + "\n");
         }
+    }
+}
+
+/// <summary>
+/// <c>~/.engram/projects.json</c>: the folders Engram was enabled in and how the MCP server was registered. Engram's
+/// own record, so <c>engram state</c> doesn't have to ask Claude Code (slow) or read its config files.
+/// </summary>
+internal static class ProjectRegistry
+{
+    private static string FilePath(string home) => Path.Combine(home, "projects.json");
+
+    private static string Key(string folder)
+    {
+        var full = Path.GetFullPath(folder).TrimEnd('/', '\\');
+        return OperatingSystem.IsWindows() ? full.ToLowerInvariant() : full;
+    }
+
+    public static string? Get(string home, string folder) =>
+        Load(home)[Key(folder)]?["mcp"]?.GetValue<string>();
+
+    public static void Set(string home, string folder, string mcp)
+    {
+        var root = Load(home);
+        root[Key(folder)] = new JsonObject
+        {
+            ["folder"] = Path.GetFullPath(folder),
+            ["mcp"] = mcp,
+            ["enabled_at"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+        };
+        Save(home, root);
+    }
+
+    public static void Remove(string home, string folder)
+    {
+        var root = Load(home);
+        if (root.Remove(Key(folder)))
+        {
+            Save(home, root);
+        }
+    }
+
+    private static JsonObject Load(string home)
+    {
+        try
+        {
+            return File.Exists(FilePath(home)) ? JsonNode.Parse(File.ReadAllText(FilePath(home))) as JsonObject ?? [] : [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static void Save(string home, JsonObject root)
+    {
+        Directory.CreateDirectory(home);
+        ProjectEnabler.WriteJson(FilePath(home), root);
     }
 }

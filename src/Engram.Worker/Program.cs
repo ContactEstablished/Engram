@@ -76,7 +76,7 @@ log.LogInformation(
 
 app.UseMiddleware<LocalOnlyMiddleware>();
 app.MapGet("/health", () => Results.Text(
-    string.Create(CultureInfo.InvariantCulture, $$"""{"status":"ok","pid":{{Environment.ProcessId}},"schema":{{migration.ToVersion}}}"""),
+    string.Create(CultureInfo.InvariantCulture, $$"""{"status":"ok","version":"{{typeof(WorkerContext).Assembly.GetName().Version?.ToString(3)}}","pid":{{Environment.ProcessId}},"schema":{{migration.ToVersion}}}"""),
     "application/json"));
 app.MapHookEndpoints();
 app.MapStatsEndpoint();
