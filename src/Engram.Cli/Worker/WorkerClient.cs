@@ -12,7 +12,11 @@ namespace Engram.Cli.Worker;
 internal static class WorkerClient
 {
     /// <summary>POSTs <paramref name="body"/>; returns the status code, or null if the worker didn't answer in time.</summary>
-    public static int? Post(int port, string path, string? token, ReadOnlySpan<byte> body, TimeSpan timeout, IReadOnlyDictionary<string, string>? headers = null)
+    public static int? Post(int port, string path, string? token, ReadOnlySpan<byte> body, TimeSpan timeout, IReadOnlyDictionary<string, string>? headers = null) =>
+        PostForBody(port, path, token, body, timeout, headers).Status;
+
+    /// <summary>POSTs <paramref name="body"/>; returns status and response body, or (null, null) if unreachable.</summary>
+    public static (int? Status, string? Body) PostForBody(int port, string path, string? token, ReadOnlySpan<byte> body, TimeSpan timeout, IReadOnlyDictionary<string, string>? headers = null)
     {
         var head = new StringBuilder()
             .Append(CultureInfo.InvariantCulture, $"POST {path} HTTP/1.1\r\n")
@@ -34,7 +38,7 @@ internal static class WorkerClient
         var request = new byte[Encoding.ASCII.GetByteCount(head.ToString()) + body.Length];
         var written = Encoding.ASCII.GetBytes(head.ToString(), request);
         body.CopyTo(request.AsSpan(written));
-        return Send(port, request, timeout).Status;
+        return Send(port, request, timeout);
     }
 
     /// <summary>GETs <paramref name="path"/>; returns status and body, or (null, null) if unreachable.</summary>

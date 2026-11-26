@@ -9,36 +9,36 @@ using Engram.Core.Settings;
 namespace Engram.Cli.Hooks;
 
 /// <param name="Stdin">Hook JSON from Claude Code.</param>
-/// <param name="Stdout">Becomes session context. Phase 1 writes nothing; Phase 3 injects the memory index.</param>
+/// <param name="Stdout">Becomes session context: the memory index the worker returns.</param>
 /// <param name="GetEnv">Environment lookup.</param>
-/// <param name="Post">Sends the payload to the worker; returns the HTTP status or null. Swappable for tests.</param>
-/// <param name="StartWorker">Starts the worker; returns an error message or null.</param>
+/// <param name="FetchContext">POSTs the payload to the worker's /context; returns status and body (nulls if unreachable).</param>
+/// <param name="StartWorker">Starts the worker and waits for it; returns an error message or null.</param>
 internal sealed record SessionStartContext(
     Stream Stdin,
     Stream Stdout,
     Func<string, string?> GetEnv,
-    Func<int, string?, byte[], int?> Post,
-    Func<string, string?> StartWorker);
+    Func<int, string, byte[], (int? Status, string? Body)> FetchContext,
+    Func<int, string, string?> StartWorker);
 
 /// <summary>
-/// <c>engram hook session-start</c>: registers the session with the worker, starting the worker if it
-/// isn't running. SessionStart can't use HTTP hooks, so this command is the bridge. Fails open: always
-/// exits 0, never prints errors, and never waits more than a few hundred milliseconds.
+/// <c>engram hook session-start</c>: registers the session with the worker and prints the memory index for
+/// this repo, which Claude Code adds to the session's context. Starts the worker if it isn't running and
+/// waits briefly for it, since the first session after a reboot is when the memory matters most. Fails open:
+/// always exits 0, prints nothing but the context, and gives up after a few seconds.
 /// </summary>
 internal static class SessionStartHook
 {
-    public const string Path = "/hooks/session-start";
-    public static readonly TimeSpan PostTimeout = TimeSpan.FromMilliseconds(250);
+    public const string ContextPath = "/context";
+    public static readonly TimeSpan ContextTimeout = TimeSpan.FromSeconds(2);
+    public static readonly TimeSpan ColdStartWait = TimeSpan.FromSeconds(3);
     private const int MaxStdinBytes = 8 * 1024 * 1024;
 
     public static SessionStartContext Default(Func<string, string?> getEnv) => new(
         Console.OpenStandardInput(),
         Console.OpenStandardOutput(),
         getEnv,
-        (port, token, body) => WorkerClient.Post(port, Path, token, body, PostTimeout),
-        home => WorkerLauncher.Locate(getEnv) is { } worker
-            ? WorkerLauncher.TryStart(worker, home, out var error) ? null : error
-            : $"engram-worker not found next to {AppContext.BaseDirectory} (set {WorkerLauncher.PathVariable})");
+        (port, token, body) => WorkerClient.PostForBody(port, ContextPath, token, body, ContextTimeout),
+        (port, home) => WorkerLauncher.EnsureRunning(port, home, getEnv, ColdStartWait));
 
     public static int Run(SessionStartContext ctx)
     {
@@ -59,23 +59,42 @@ internal static class SessionStartHook
             }
 
             var (settings, _) = SettingsLoader.Load(home, ctx.GetEnv);
+            var port = settings.Worker.Port;
             var token = WorkerToken.Read(home);
-            var status = token is null ? null : ctx.Post(settings.Worker.Port, token, body);
-            if (status is >= 200 and < 300)
+            if (token is null)
             {
+                // Not installed yet: the worker creates the token on first start; keep the payload for it.
+                Spool(home, body);
+                if (ctx.StartWorker(port, home) is { } startError)
+                {
+                    LogError(home, $"session-start: could not start the worker: {startError}");
+                }
+
                 return 0;
             }
 
-            // Worker down or still starting: keep the payload for it, and start it.
+            var (status, context) = ctx.FetchContext(port, token, body);
+            if (status is null)
+            {
+                // Worker down: start it, wait for it, and try once more.
+                if (ctx.StartWorker(port, home) is { } startError)
+                {
+                    Spool(home, body);
+                    LogError(home, $"session-start: could not start the worker: {startError}; payload spooled");
+                    return 0;
+                }
+
+                (status, context) = ctx.FetchContext(port, token, body);
+            }
+
+            if (status is >= 200 and < 300)
+            {
+                WriteContext(ctx.Stdout, context);
+                return 0;
+            }
+
             Spool(home, body);
-            if (status is null && ctx.StartWorker(home) is { } error)
-            {
-                LogError(home, $"session-start: could not start the worker: {error}");
-            }
-            else if (status is not null)
-            {
-                LogError(home, string.Create(CultureInfo.InvariantCulture, $"session-start: worker answered {status}; payload spooled"));
-            }
+            LogError(home, string.Create(CultureInfo.InvariantCulture, $"session-start: worker answered {status?.ToString(CultureInfo.InvariantCulture) ?? "nothing"}; payload spooled"));
         }
         catch (Exception ex)
         {
@@ -88,15 +107,27 @@ internal static class SessionStartHook
         return 0;
     }
 
+    /// <summary>Raw UTF-8 bytes (never Console.Out, which uses the console code page on Windows).</summary>
+    private static void WriteContext(Stream stdout, string? context)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+        {
+            return;
+        }
+
+        stdout.Write(Encoding.UTF8.GetBytes(context));
+        stdout.Flush();
+    }
+
     /// <summary>Writes atomically (temp file then rename) so the worker never reads half a payload.</summary>
     internal static void Spool(string home, byte[] body)
     {
         var dir = EngramPaths.Spool(home);
         Directory.CreateDirectory(dir);
         var name = string.Create(CultureInfo.InvariantCulture, $"{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}");
-        var temp = System.IO.Path.Combine(dir, name + ".tmp");
+        var temp = Path.Combine(dir, name + ".tmp");
         File.WriteAllBytes(temp, body);
-        File.Move(temp, System.IO.Path.Combine(dir, name + ".json"));
+        File.Move(temp, Path.Combine(dir, name + ".json"));
     }
 
     private static void LogError(string home, string message)
@@ -104,7 +135,7 @@ internal static class SessionStartHook
         try
         {
             var line = string.Create(CultureInfo.InvariantCulture, $"{DateTimeOffset.Now:O} {message}{Environment.NewLine}");
-            SafeFile.Append(System.IO.Path.Combine(EngramPaths.Logs(home), "hook-errors.log"), Encoding.UTF8.GetBytes(line));
+            SafeFile.Append(Path.Combine(EngramPaths.Logs(home), "hook-errors.log"), Encoding.UTF8.GetBytes(line));
         }
         catch
         {

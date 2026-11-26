@@ -24,6 +24,46 @@ internal static class WorkerLauncher
         return File.Exists(besideCli) ? besideCli : null;
     }
 
+    /// <summary>
+    /// Makes sure a worker answers on <paramref name="port"/>: starts one if needed and waits up to
+    /// <paramref name="wait"/>. Returns null on success, or why it isn't available.
+    /// </summary>
+    public static string? EnsureRunning(int port, string home, Func<string, string?> getEnv, TimeSpan wait)
+    {
+        if (WorkerClient.Get(port, "/health", TimeSpan.FromMilliseconds(300)).Status == 200)
+        {
+            return null;
+        }
+
+        if (Locate(getEnv) is not { } worker)
+        {
+            return $"engram-worker not found next to {AppContext.BaseDirectory} (set {PathVariable})";
+        }
+
+        if (!TryStart(worker, home, out var error))
+        {
+            return error;
+        }
+
+        return WaitForHealth(port, wait) ? null : $"the worker did not answer within {wait.TotalSeconds:0.#} s";
+    }
+
+    public static bool WaitForHealth(int port, TimeSpan wait)
+    {
+        var deadline = DateTime.UtcNow + wait;
+        do
+        {
+            if (WorkerClient.Get(port, "/health", TimeSpan.FromMilliseconds(300)).Status == 200)
+            {
+                return true;
+            }
+
+            Thread.Sleep(100);
+        }
+        while (DateTime.UtcNow < deadline);
+        return false;
+    }
+
     /// <summary>Starts the worker; returns false (with a reason) if it couldn't be started.</summary>
     public static bool TryStart(string workerPath, string home, out string? error)
     {

@@ -9,6 +9,7 @@ namespace Engram.Tests.Cli;
 public sealed class SessionStartHookTests : IDisposable
 {
     private const string Payload = """{"hook_event_name":"SessionStart","session_id":"s","transcript_path":"t","cwd":"c","source":"startup"}""";
+    private const string Index = "Engram memory for repo \"app\": 1 of 1 observations.\n#1 decision 11-26  Café uses webhooks\n";
     private readonly TempDir _temp = new();
     private readonly MemoryStream _stdout = new();
     private readonly List<(int Port, string? Token, string Body)> _posts = [];
@@ -20,7 +21,8 @@ public sealed class SessionStartHookTests : IDisposable
         _temp.Dispose();
     }
 
-    private SessionStartContext Context(string stdin, int? postStatus, string? disable = null, string? startError = null) => new(
+    // replies: what each /context call returns, in order (the last one repeats).
+    private SessionStartContext Context(string stdin, (int? Status, string? Body)[] replies, string? disable = null, string? startError = null) => new(
         new MemoryStream(Encoding.UTF8.GetBytes(stdin)),
         _stdout,
         name => name switch
@@ -32,36 +34,65 @@ public sealed class SessionStartHookTests : IDisposable
         (port, token, body) =>
         {
             _posts.Add((port, token, Encoding.UTF8.GetString(body)));
-            return postStatus;
+            return replies[Math.Min(_posts.Count - 1, replies.Length - 1)];
         },
-        _ =>
+        (_, _) =>
         {
             _starts++;
             return startError;
         });
 
+    private SessionStartContext Context(string stdin, int? status, string? disable = null, string? startError = null) =>
+        Context(stdin, [(status, status is null ? null : string.Empty)], disable, startError);
+
+    private string Stdout => Encoding.UTF8.GetString(_stdout.ToArray());
+
     private string[] Spooled() =>
         Directory.Exists(EngramPaths.Spool(_temp.Path)) ? Directory.GetFiles(EngramPaths.Spool(_temp.Path)) : [];
 
     [Fact]
-    public void Running_worker_gets_the_payload_with_the_token()
+    public void Running_worker_gets_the_payload_and_its_context_is_printed_as_utf8()
     {
         var token = WorkerToken.ReadOrCreate(_temp.Path);
 
-        SessionStartHook.Run(Context(Payload, 200)).ShouldBe(0);
+        SessionStartHook.Run(Context(Payload, [(200, Index)])).ShouldBe(0);
 
         _posts.ShouldHaveSingleItem().ShouldBe((47613, token, Payload));
         _starts.ShouldBe(0);
         Spooled().ShouldBeEmpty();
-        _stdout.Length.ShouldBe(0, "Phase 1 injects no context");
+        Stdout.ShouldBe(Index);
+        _stdout.ToArray().ShouldContain((byte)0xC3, "é is written as UTF-8, not the console code page");
     }
 
     [Fact]
-    public void Worker_down_spools_the_payload_and_starts_the_worker()
+    public void Nothing_to_inject_prints_nothing()
     {
         WorkerToken.ReadOrCreate(_temp.Path);
 
-        SessionStartHook.Run(Context(Payload, null)).ShouldBe(0);
+        SessionStartHook.Run(Context(Payload, [(200, "")])).ShouldBe(0);
+
+        _stdout.Length.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Worker_down_is_started_and_the_context_fetched_once_it_answers()
+    {
+        WorkerToken.ReadOrCreate(_temp.Path);
+
+        SessionStartHook.Run(Context(Payload, [(null, null), (200, Index)])).ShouldBe(0);
+
+        _starts.ShouldBe(1);
+        _posts.Count.ShouldBe(2);
+        Stdout.ShouldBe(Index);
+        Spooled().ShouldBeEmpty("the second call registered the session");
+    }
+
+    [Fact]
+    public void Worker_that_never_comes_up_gets_the_payload_spooled()
+    {
+        WorkerToken.ReadOrCreate(_temp.Path);
+
+        SessionStartHook.Run(Context(Payload, (int?)null)).ShouldBe(0);
 
         _starts.ShouldBe(1);
         var spooled = Spooled().ShouldHaveSingleItem();
@@ -83,10 +114,25 @@ public sealed class SessionStartHookTests : IDisposable
     [Fact]
     public void Start_failure_is_logged_not_printed()
     {
-        SessionStartHook.Run(Context(Payload, null, startError: "boom")).ShouldBe(0);
+        WorkerToken.ReadOrCreate(_temp.Path);
+
+        SessionStartHook.Run(Context(Payload, (int?)null, startError: "boom")).ShouldBe(0);
 
         _stdout.Length.ShouldBe(0);
+        Spooled().Length.ShouldBe(1);
         File.ReadAllText(Path.Combine(EngramPaths.Logs(_temp.Path), "hook-errors.log")).ShouldContain("boom");
+    }
+
+    [Fact]
+    public void A_rejected_token_spools_and_logs_but_prints_nothing()
+    {
+        WorkerToken.ReadOrCreate(_temp.Path);
+
+        SessionStartHook.Run(Context(Payload, [(401, "")])).ShouldBe(0);
+
+        _stdout.Length.ShouldBe(0);
+        Spooled().Length.ShouldBe(1);
+        File.ReadAllText(Path.Combine(EngramPaths.Logs(_temp.Path), "hook-errors.log")).ShouldContain("401");
     }
 
     [Theory]
@@ -94,7 +140,7 @@ public sealed class SessionStartHookTests : IDisposable
     [InlineData("  \r\n")]
     public void Empty_stdin_does_nothing(string stdin)
     {
-        SessionStartHook.Run(Context(stdin, null)).ShouldBe(0);
+        SessionStartHook.Run(Context(stdin, (int?)null)).ShouldBe(0);
 
         _posts.ShouldBeEmpty();
         _starts.ShouldBe(0);
