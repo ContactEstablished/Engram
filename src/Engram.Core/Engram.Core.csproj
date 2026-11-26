@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Engram.Core</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- Same RIDs as Engram.Cli, so publishing the CLI doesn't rewrite this project's lock file. -->
+    <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+</Project>

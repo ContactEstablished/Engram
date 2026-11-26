@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png binary
+# NuGet writes lock files with CRLF on Windows; match it to avoid phantom changes.
+packages.lock.json text eol=crlf

@@ -1,0 +1,12 @@
+{
+  "session_id": "37d0983d-f8d8-4acd-bc59-1ba1b0756312",
+  "transcript_path": "<HOME>/.claude/projects/-home-<USER>-src-engram-sandbox/37d0983d-f8d8-4acd-bc59-1ba1b0756312.jsonl",
+  "cwd": "<HOME>/src/engram-sandbox",
+  "scratchpad_dir": "/tmp/claude-1000/-home-<USER>-src-engram-sandbox/37d0983d-f8d8-4acd-bc59-1ba1b0756312/scratchpad",
+  "hook_event_name": "SessionStart",
+  "source": "resume",
+  "seconds_since_last_response": 19,
+  "context_tokens": 47038,
+  "prompt_cache_likely_expired": false,
+  "estimated_cache_write_usd": 0.3763
+}

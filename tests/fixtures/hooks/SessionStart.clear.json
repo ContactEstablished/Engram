@@ -1,0 +1,8 @@
+{
+  "session_id": "2a3f28f4-af8e-46b8-be40-1234042919b9",
+  "transcript_path": "<HOME>\\.claude\\projects\\C--Users-<USER>-src-engram-sandbox\\2a3f28f4-af8e-46b8-be40-1234042919b9.jsonl",
+  "cwd": "<HOME>\\src\\engram-sandbox",
+  "scratchpad_dir": "<HOME>\\AppData\\Local\\Temp\\claude\\b489c997a7d295f3\\2a3f28f4-af8e-46b8-be40-1234042919b9\\scratchpad",
+  "hook_event_name": "SessionStart",
+  "source": "clear"
+}

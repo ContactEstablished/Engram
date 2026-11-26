@@ -1,0 +1,28 @@
+# Build output
+artifacts/
+bin/
+obj/
+*.binlog
+
+# IDEs
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.DotSettings.user
+
+# Test results
+TestResults/
+*.trx
+coverage*/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Local Claude Code settings (spike/settings.local.json is a sample and is tracked)
+.claude/settings.local.json
+
+# Engram runtime data must never be committed
+.engram/

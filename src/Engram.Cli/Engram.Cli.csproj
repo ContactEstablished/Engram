@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Engram.Cli</RootNamespace>
+    <AssemblyName>engram</AssemblyName>
+
+    <!-- On the hook hot path: Native AOT for fast cold start. -->
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <StripSymbols>true</StripSymbols>
+
+    <!-- Publish targets. Listing them makes every restore resolve the same graph, so
+         packages.lock.json doesn't change between `dotnet build` and `dotnet publish -r`. -->
+    <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Engram.Core\Engram.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Engram.Tests" />
+  </ItemGroup>
+</Project>
