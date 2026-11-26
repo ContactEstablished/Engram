@@ -255,3 +255,72 @@ public sealed class SemanticSearchTests : IDisposable
         ex.Message.ShouldContain("ollama pull nomic-embed-text");
     }
 }
+
+public sealed class EvalCommandTests : IDisposable
+{
+    private readonly ConceptEmbedder _embedder = new();
+    private readonly WorkerFactory _factory;
+    private readonly HttpClient _client;
+    private readonly string _cwd;
+
+    public EvalCommandTests()
+    {
+        _factory = new WorkerFactory("""{ "observer": { "provider": "none" }, "search": { "semantic": true } }""", fakeEmbedder: _embedder);
+        _client = _factory.CreateHookClient();
+        _cwd = _factory.Temp.Combine("chorus").Replace('\\', '/');
+        _factory.Execute("INSERT INTO projects (identity, name, created_at) VALUES (@identity, 'chorus', '2026-01-01')", new { identity = "dir:" + ProjectResolver.NormalizePath(_cwd) });
+        _factory.Execute("INSERT INTO sessions (id, project_id, platform, cwd, started_at, last_seen_at) VALUES ('s1', 1, 'windows', @cwd, '2026-01-01', '2026-01-01')", new { cwd = _cwd });
+        foreach (var (type, title) in new[] { ("decision", "Telegram uses webhooks, not polling"), ("gotcha", "node-pty needs a rebuild after Electron upgrades"), ("discovery", "Versions are tagged from release branches") })
+        {
+            _factory.Execute("INSERT INTO observations (session_id, project_id, type, title, narrative, provider, model, created_at) VALUES ('s1', 1, @type, @title, @title, 'f', 'm', '2026-11-01')", new { type, title });
+        }
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose();
+        _factory.Dispose();
+    }
+
+    [Fact]
+    public async Task Eval_compares_modes_and_lists_misses()
+    {
+        _factory.Services.GetRequiredService<EmbeddingSignal>().Notify();
+        for (var i = 0; i < 200 && _factory.Count("SELECT count(*) FROM observation_vectors") < 3; i++)
+        {
+            await Task.Delay(25, TestContext.Current.CancellationToken);
+        }
+
+        var file = _factory.Temp.Combine("eval.json");
+        File.WriteAllText(file, $$"""
+            {
+              // comments are fine
+              "k": 2,
+              "cwd": "{{_cwd}}",
+              "questions": [
+                { "q": "why webhooks?", "expected": [1] },
+                { "q": "how do push notifications reach us", "expected": [1] },
+                { "q": "what breaks after upgrading electron", "expected": [2] },
+              ]
+            }
+            """);
+        var output = new StringWriter();
+
+        Engram.Cli.Commands.EvalCommand.Run([file], new Engram.Tests.Cli.FactoryMemoryApi(_client), () => "unused", output).ShouldBe(0);
+
+        var text = output.ToString();
+        text.ShouldContain("Retrieval eval: 3 question(s), top 2");
+        text.ShouldMatch(@"keyword\s+67%\s+67%");
+        text.ShouldMatch(@"hybrid\s+100%\s+100%");
+        text.ShouldContain("Missed by keyword:");
+        text.ShouldContain("\"how do push notifications reach us\": missing #1 (got nothing)");
+        text.ShouldNotContain("Missed by hybrid");
+    }
+
+    [Fact]
+    public void Eval_files_are_validated()
+    {
+        Should.Throw<ArgumentException>(() => Engram.Cli.Commands.EvalCommand.Load("""{ "questions": [ { "q": "x" } ] }""")).Message.ShouldContain("no expected ids");
+        Should.Throw<ArgumentException>(() => Engram.Cli.Commands.EvalCommand.Load("""{ }""")).Message.ShouldContain("\"questions\" array");
+    }
+}

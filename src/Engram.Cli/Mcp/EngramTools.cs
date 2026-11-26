@@ -61,7 +61,7 @@ internal static class EngramTools
     [
         new(
             "search",
-            "Search Engram's memory of this repository (keyword search, best matches first). Returns one line per observation with its id. " +
+            "Search Engram's memory of this repository by keyword and by meaning (best matches first), so a plain question works. Returns one line per observation with its id. " +
             "Use it before re-investigating something that may have been solved or decided in an earlier session.",
             $$"""
             {"type":"object","properties":{
@@ -70,7 +70,8 @@ internal static class EngramTools
               "since":{"type":"string","description":"Only newer than this: a date (2026-11-01) or days ('14d')."},
               "branch":{"type":"string","description":"Only observations made on this git branch."},
               "limit":{"type":"integer","minimum":1,"maximum":50,"description":"Default 10."},
-              "all_repos":{"type":"boolean","description":"Search every repository, not just this one."}
+              "all_repos":{"type":"boolean","description":"Search every repository, not just this one."},
+              "mode":{"type":"string","enum":["hybrid","keyword","semantic"],"description":"Default hybrid (keyword and meaning)."}
             },"required":["query"],"additionalProperties":false}
             """,
             args =>
@@ -79,6 +80,7 @@ internal static class EngramTools
                 Append(query, "type", Str(args, "type"));
                 Append(query, "since", Str(args, "since"));
                 Append(query, "branch", Str(args, "branch"));
+                Append(query, "mode", Str(args, "mode"));
                 Append(query, "limit", Int(args, "limit")?.ToString(CultureInfo.InvariantCulture));
                 if (Bool(args, "all_repos") == true)
                 {

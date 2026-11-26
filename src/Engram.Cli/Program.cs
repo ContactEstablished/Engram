@@ -16,9 +16,10 @@ internal static class Program
                                                     Create ~/.engram, default settings and the worker token; export ENGRAM_TOKEN
           engram status                             Show whether the worker is running and where things are
           engram recent [--limit N]                 Show the latest observations and session summaries
-          engram search WORDS [--all] [--type T] [--since 14d] [--limit N]
+          engram search WORDS [--all] [--keyword|--semantic] [--type T] [--since 14d] [--limit N]
                                                     Search memory of the current repo (or all repos)
           engram show ID...                         Full records for observations
+          engram eval FILE [--k 5]                  Retrieval eval: recall of keyword vs meaning vs hybrid search
           engram mcp                                MCP server (stdio) with search, timeline, get_observations, save_memory, forget
           engram worker start | stop                Start the worker in the background, or stop it
           engram hook session-start                 SessionStart hook handler (registers the session, starts the worker)
@@ -65,6 +66,7 @@ internal static class Program
                 ["recent", .. var recentArgs] => RecentCommand.Run(recentArgs, Environment.GetEnvironmentVariable, Console.Out),
                 ["search", .. var searchArgs] => SearchCommand.Search(searchArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
                 ["show", .. var showArgs] => SearchCommand.Show(showArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
+                ["eval", .. var evalArgs] => EvalCommand.Run(evalArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
                 ["mcp"] => RunMcp(),
                 ["worker", "start"] => StatusCommand.StartWorker(Environment.GetEnvironmentVariable, Console.Out),
                 ["worker", "stop"] => StatusCommand.StopWorker(Environment.GetEnvironmentVariable, Console.Out),

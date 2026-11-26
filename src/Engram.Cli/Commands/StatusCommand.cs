@@ -64,6 +64,16 @@ internal static class StatusCommand
             }
         }
 
+        if (root.TryGetProperty("search", out var search))
+        {
+            var semantic = search.TryGetProperty("semantic", out var on) && on.ValueKind == System.Text.Json.JsonValueKind.True;
+            var model = search.TryGetProperty("model", out var m2) ? m2.GetString() : "?";
+            var error = search.TryGetProperty("last_error", out var e2) && e2.ValueKind == System.Text.Json.JsonValueKind.String ? e2.GetString() : null;
+            output.WriteLine(!semantic
+                ? "search:        keyword only (search.semantic = false)"
+                : $"search:        keyword + meaning ({model}), {N(search, "vectors")} of {N(counts, "observations")} observations embedded{(error is null ? string.Empty : $"; embeddings unavailable: {error}")}");
+        }
+
         if (root.TryGetProperty("observer", out var obs))
         {
             var provider = obs.TryGetProperty("provider", out var p) ? p.GetString() : "?";

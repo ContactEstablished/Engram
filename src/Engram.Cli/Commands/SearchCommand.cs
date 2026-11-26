@@ -5,7 +5,7 @@ using Engram.Cli.Mcp;
 namespace Engram.Cli.Commands;
 
 /// <summary>
-/// <c>engram search &lt;words&gt; [--all] [--type T] [--since 14d] [--limit N]</c> and <c>engram show &lt;id&gt;...</c>:
+/// <c>engram search &lt;words&gt; [--all] [--keyword|--semantic] [--type T] [--since 14d] [--limit N]</c> and <c>engram show &lt;id&gt;...</c>:
 /// the MCP search and get_observations tools, for you in a terminal.
 /// </summary>
 internal static class SearchCommand
@@ -21,6 +21,9 @@ internal static class SearchCommand
             {
                 case "--all":
                     options["all_repos"] = true;
+                    break;
+                case "--keyword" or "--semantic":
+                    options["mode"] = args[i][2..];
                     break;
                 case "--type" or "--since" or "--branch" when i + 1 < args.Length:
                     options[args[i][2..]] = args[++i];
