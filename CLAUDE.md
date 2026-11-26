@@ -93,9 +93,9 @@ pwsh spike/measure-coldstart.ps1                         # AOT cold-start timing
 
 ## Current phase
 
-**Phase 3 — injection and search: built; waiting on the user's gate run** (`docs/phase3.md` → "Phase 3 gate"). SessionStart prints the memory index; `engram mcp` serves search, timeline, get_observations, save_memory, forget. The Phase 2 quality check is folded into this gate. **Do not start Phase 4** (semantic search / embeddings) until the user signs off.
+**Phase 3 — injection and search: complete (gate passed 2026-11-26** on Windows and WSL; see `docs/phase3.md`). SessionStart prints the memory index; `engram mcp` serves search, timeline, get_observations, save_memory, forget. Next: Phase 4 (semantic search), approved by the user; the embedding provider is still to be chosen.
 
-Phase 2 — observer: built (gate folded into Phase 3 at the user's request; see `docs/phase2.md`).
+Phase 2 — observer: complete (quality gate passed 2026-11-26; see `docs/phase2.md`).
 
 Phase 1 — capture: complete (gate passed 2026-11-26 on Windows and WSL; see `docs/phase1.md`).
 

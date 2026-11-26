@@ -64,7 +64,7 @@ framing; (2) Claude read the remote-derived project name ("release-tool") as a *
 ("e2e-repo3"), and doubted records whose titles were visibly clipped. Wording is now "this repository (project
 X)", and saved titles are the whole first sentence.
 
-## Phase 3 gate (your run)
+## Phase 3 gate (passed 2026-11-26 on Windows and WSL)
 
 1. Re-install (from the repo root, `pwsh`):
    ```powershell

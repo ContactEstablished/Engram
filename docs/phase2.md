@@ -80,7 +80,7 @@ switch it back.
 
 Cost is shown at list price (`total_cost_usd` from `claude`); on Max it counts against your plan limits instead.
 
-## Phase 2 gate (your run)
+## Phase 2 gate (passed 2026-11-26, checked together with Phase 3)
 
 1. Re-install so the new worker is in place (from the repo root, `pwsh`):
    ```powershell
