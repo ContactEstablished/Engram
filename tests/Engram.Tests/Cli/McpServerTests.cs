@@ -108,7 +108,7 @@ public sealed class McpServerTests : IDisposable
     {
         var (saved, saveError) = Call("save_memory", """{"text":"Releases are cut from the release/* branches only. Never tag main.","type":"decision","files":["docs/release.md"]}""");
         saveError.ShouldBeFalse(saved);
-        saved.ShouldStartWith("Saved as #1 (decision) in repo \"app\"");
+        saved.ShouldStartWith("Saved as #1 (decision) for this repository (project \"app\")");
 
         var (found, _) = Call("search", """{"query":"release branches"}""");
         found.ShouldContain("#1 decision");

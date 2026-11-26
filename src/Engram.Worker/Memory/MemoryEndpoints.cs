@@ -99,7 +99,7 @@ internal static class MemoryEndpoints
 
             var project = projects.Resolve(cwd);
             projectId = store.FindProject(project.Identity);
-            scope = $"repo \"{project.Name}\"";
+            scope = $"this repository (project \"{project.Name}\")";
             if (projectId is null)
             {
                 return Text($"No memory recorded for {scope} yet.");
@@ -224,7 +224,7 @@ internal static class MemoryEndpoints
         var project = projects.Resolve(request.Cwd);
         var projectId = capture.GetOrCreateProject(project.Identity, project.Name, time.GetUtcNow());
         var id = store.Save(projectId, context.Platform, request.Cwd, project.Branch, new Observation(type, title, narrative, [], [.. (request.Files ?? []).Take(12)]));
-        return Text(string.Create(CultureInfo.InvariantCulture, $"Saved as #{id} ({type}) in repo \"{project.Name}\"."));
+        return Text(string.Create(CultureInfo.InvariantCulture, $"Saved as #{id} ({type}) for this repository (project \"{project.Name}\")."));
     }
 
     private static IResult Forget(HttpContext http, WorkerContext context, MemoryStore store)
@@ -295,11 +295,31 @@ internal static class MemoryEndpoints
         return false;
     }
 
-    private static string DeriveTitle(string text)
+    /// <summary>
+    /// The first sentence, whole when it fits in 120 characters. A visibly clipped title makes Claude doubt the
+    /// record ("the title is truncated"), so clipping is the last resort, at a word boundary.
+    /// </summary>
+    internal static string DeriveTitle(string text)
     {
-        var first = OneLine(text).Split(['.', '\n', '!', '?'], 2)[0];
-        var words = first.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return words.Length <= 12 ? first : string.Join(' ', words.Take(12)) + "…";
+        var line = OneLine(text);
+        var end = line.Length;
+        foreach (var stop in new[] { ". ", "! ", "? ", "; " })
+        {
+            var i = line.IndexOf(stop, StringComparison.Ordinal);
+            if (i > 0 && i < end)
+            {
+                end = i;
+            }
+        }
+
+        var first = line[..end].TrimEnd('.', '!', '?', ';');
+        if (first.Length <= 120)
+        {
+            return first;
+        }
+
+        var cut = first.LastIndexOf(' ', 118);
+        return first[..(cut > 40 ? cut : 118)] + "…";
     }
 
     private static List<string> Files(string json)

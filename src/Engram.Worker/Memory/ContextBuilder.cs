@@ -51,16 +51,16 @@ internal sealed class ContextBuilder(MemoryStore store, ProjectResolver projects
 
         var total = store.CountObservations(projectId);
         var lines = new List<string>();
-        var branchText = project.Branch is null ? string.Empty : $" (branch {project.Branch})";
+        var branchText = project.Branch is null ? string.Empty : $", branch {project.Branch}";
         var shownPlaceholder = "{shown}";
-        lines.Add($"Engram memory for repo \"{project.Name}\"{branchText}: {shownPlaceholder} of {total} observations, most relevant first by type and recency.");
+        lines.Add($"Engram memory for this repository (project \"{project.Name}\"{branchText}): {shownPlaceholder} of {total} observations, most relevant first by type and recency. Each line is the title of a longer record.");
         if (summary is not null)
         {
             lines.Add(SummaryLine(summary));
         }
 
         var header = string.Join('\n', lines);
-        const string footer = "Full records and older history are available through the engram MCP tools (search, timeline, get_observations).";
+        const string footer = "Full records and older history are available through the engram MCP tools (get_observations with the #id, search, timeline).";
         var budget = settings.MaxChars - header.Length - footer.Length - 20;
         var rows = new List<string>();
         foreach (var o in ranked)

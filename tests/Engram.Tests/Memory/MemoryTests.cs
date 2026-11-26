@@ -87,7 +87,7 @@ public sealed class MemoryTests : IDisposable
         await _factory.DrainAsync();
 
         var lines = text.TrimEnd('\n').Split('\n');
-        lines[0].ShouldBe("Engram memory for repo \"chorus\": 3 of 3 observations, most relevant first by type and recency.");
+        lines[0].ShouldBe("Engram memory for this repository (project \"chorus\"): 3 of 3 observations, most relevant first by type and recency. Each line is the title of a longer record.");
         lines[1].ShouldStartWith("Last session 2026-11-24: Add the Telegram webhook; done: webhook added; open: retry handling");
         lines[2].ShouldStartWith($"#{gotcha} gotcha");
         lines[3].ShouldStartWith($"#{decision} decision");
@@ -155,8 +155,8 @@ public sealed class MemoryTests : IDisposable
         (await GetAsync($"/memory/search?q={Q("poll")}&cwd={Q(_cwd)}")).Body.ShouldContain($"#{webhook}");
         var mixed = (await GetAsync($"/memory/search?q={Q("why did we choose webhooks over polling for telegram?")}&cwd={Q(_cwd)}")).Body;
         mixed.ShouldContain($"#{webhook}");
-        mixed.ShouldStartWith("1 result(s) in repo \"chorus\"");
-        (await GetAsync($"/memory/search?q={Q("kubernetes")}&cwd={Q(_cwd)}")).Body.ShouldBe("No observations in repo \"chorus\" match \"kubernetes\".");
+        mixed.ShouldStartWith("1 result(s) in this repository (project \"chorus\")");
+        (await GetAsync($"/memory/search?q={Q("kubernetes")}&cwd={Q(_cwd)}")).Body.ShouldBe("No observations in this repository (project \"chorus\") match \"kubernetes\".");
     }
 
     [Fact]
@@ -265,5 +265,25 @@ public sealed class MemoryTests : IDisposable
 
         TestContext.Current.TestOutputHelper?.WriteLine($"search over 10k: {string.Join(", ", timings.Select(t => t.ToString("0.0", CultureInfo.InvariantCulture)))} ms");
         timings.Max().ShouldBeLessThan(500, "plan budget is 100 ms; generous here to avoid CI noise");
+    }
+}
+
+public sealed class DeriveTitleTests
+{
+    [Theory]
+    [InlineData("Deploys go through staging first. Then prod.", "Deploys go through staging first")]
+    [InlineData("The changelog generator fails silently when a commit subject starts with a colon; such commits are dropped from CHANGELOG.md.", "The changelog generator fails silently when a commit subject starts with a colon")]
+    [InlineData("Version numbers come from the release/* branch name, not the csproj.", "Version numbers come from the release/* branch name, not the csproj")]
+    [InlineData("Uses v1.2.3 tags", "Uses v1.2.3 tags")]
+    public void Titles_are_the_first_sentence_whole(string text, string expected) =>
+        Engram.Worker.Memory.MemoryEndpoints.DeriveTitle(text).ShouldBe(expected);
+
+    [Fact]
+    public void Very_long_sentences_are_cut_at_a_word()
+    {
+        var title = Engram.Worker.Memory.MemoryEndpoints.DeriveTitle(string.Join(' ', Enumerable.Repeat("word", 60)));
+
+        title.Length.ShouldBeLessThanOrEqualTo(120);
+        title.ShouldEndWith("word…");
     }
 }
