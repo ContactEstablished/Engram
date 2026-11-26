@@ -91,6 +91,16 @@ public static class SettingsLoader
             OllamaOptions = observer.OllamaOptions ?? new OllamaSettings(),
         };
 
+        var injection = s.Injection ?? new InjectionSettings();
+        injection = injection with
+        {
+            MaxChars = Math.Clamp(injection.MaxChars, 500, 9500),
+            MaxRows = Math.Clamp(injection.MaxRows, 0, 100),
+            HalfLifeDays = injection.HalfLifeDays > 0 ? injection.HalfLifeDays : 21,
+            SameBranchBoost = injection.SameBranchBoost > 0 ? injection.SameBranchBoost : 1,
+            TypeWeights = injection.TypeWeights ?? new InjectionSettings().TypeWeights,
+        };
+
         var worker = s.Worker;
         if (worker.Port is <= 0 or >= 65536)
         {
@@ -107,6 +117,6 @@ public static class SettingsLoader
             ExcludePaths = capture.ExcludePaths ?? defaults.ExcludePaths,
             RedactPatterns = capture.RedactPatterns ?? defaults.RedactPatterns,
         };
-        return s with { Capture = capture, Worker = worker, Observer = observer };
+        return s with { Capture = capture, Worker = worker, Observer = observer, Injection = injection };
     }
 }

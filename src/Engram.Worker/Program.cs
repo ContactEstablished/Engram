@@ -4,6 +4,7 @@ using Engram.Core.Security;
 using Engram.Core.Settings;
 using Engram.Worker;
 using Engram.Worker.Capture;
+using Engram.Worker.Memory;
 using Engram.Worker.Observer;
 using Engram.Worker.Storage;
 
@@ -34,6 +35,8 @@ builder.Services.AddSingleton(new Database(EngramPaths.Database(home)));
 builder.Services.AddSingleton<CaptureStore>();
 builder.Services.AddSingleton<ObserverStore>();
 builder.Services.AddSingleton<JobSignal>();
+builder.Services.AddSingleton<MemoryStore>();
+builder.Services.AddSingleton<ContextBuilder>();
 builder.Services.AddSingleton<IProcessRunner, SystemProcessRunner>();
 builder.Services.AddSingleton(sp => ObserverRuntime.Create(
     sp.GetRequiredService<WorkerContext>(), sp.GetRequiredService<ObserverStore>(), sp.GetRequiredService<IProcessRunner>(), new HttpClient(), getEnv));
@@ -70,6 +73,7 @@ app.MapGet("/health", () => Results.Text(
     "application/json"));
 app.MapHookEndpoints();
 app.MapStatsEndpoint();
+app.MapMemoryEndpoints();
 app.MapPost("/shutdown", (HttpContext http, IHostApplicationLifetime lifetime) =>
 {
     if (!WorkerToken.Matches(http.Request.Headers.Authorization, context.Token))

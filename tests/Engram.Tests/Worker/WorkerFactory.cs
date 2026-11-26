@@ -66,6 +66,13 @@ internal sealed class WorkerFactory : WebApplicationFactory<Program>
         return [.. c.Query<T>(sql, args)];
     }
 
+    public int Execute(string sql, object? args = null)
+    {
+        using var c = new SqliteConnection($"Data Source={EngramPaths.Database(Home)};Pooling=false");
+        c.Open();
+        return c.Execute(sql, args);
+    }
+
     public long Count(string sql, object? args = null)
     {
         using var c = new SqliteConnection($"Data Source={EngramPaths.Database(Home)};Pooling=false");

@@ -11,6 +11,8 @@ public sealed record EngramSettings
     public CaptureSettings Capture { get; set; } = new();
 
     public ObserverSettings Observer { get; set; } = new();
+
+    public InjectionSettings Injection { get; set; } = new();
 }
 
 public sealed record WorkerSettings
@@ -77,4 +79,32 @@ public sealed record OllamaSettings
     public string Url { get; set; } = "http://127.0.0.1:11434";
 
     public string Model { get; set; } = "qwen3:14b";
+}
+
+/// <summary>What SessionStart puts in front of Claude: the last summary and a ranked index of observations.</summary>
+public sealed record InjectionSettings
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Claude Code shows only a 2,000-character preview past 10,000; stay well under.</summary>
+    public int MaxChars { get; set; } = 6000;
+
+    public int MaxRows { get; set; } = 25;
+
+    /// <summary>Rank multiplier per observation type; unlisted types weigh 1.</summary>
+    public Dictionary<string, double> TypeWeights { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["decision"] = 3,
+        ["gotcha"] = 3,
+        ["bugfix"] = 2,
+        ["feature"] = 1,
+        ["change"] = 1,
+        ["discovery"] = 1,
+    };
+
+    /// <summary>Age (days) at which an observation's recency factor halves.</summary>
+    public double HalfLifeDays { get; set; } = 21;
+
+    /// <summary>Rank multiplier for observations made on the current branch.</summary>
+    public double SameBranchBoost { get; set; } = 1.5;
 }
