@@ -1,0 +1,80 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "engram", "args": ["hook", "session-start"], "timeout": 10 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{
+          "type": "http",
+          "url": "http://127.0.0.1:47613/hooks/prompt",
+          "timeout": 5,
+          "headers": { "Authorization": "Bearer $ENGRAM_TOKEN", "X-Engram-Disable": "${ENGRAM_DISABLE}" },
+          "allowedEnvVars": ["ENGRAM_TOKEN", "ENGRAM_DISABLE"]
+        }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|Agent|Task",
+        "hooks": [{
+          "type": "http",
+          "url": "http://127.0.0.1:47613/hooks/tool",
+          "timeout": 5,
+          "headers": { "Authorization": "Bearer $ENGRAM_TOKEN", "X-Engram-Disable": "${ENGRAM_DISABLE}" },
+          "allowedEnvVars": ["ENGRAM_TOKEN", "ENGRAM_DISABLE"]
+        }]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|Agent|Task",
+        "hooks": [{
+          "type": "http",
+          "url": "http://127.0.0.1:47613/hooks/tool",
+          "timeout": 5,
+          "headers": { "Authorization": "Bearer $ENGRAM_TOKEN", "X-Engram-Disable": "${ENGRAM_DISABLE}" },
+          "allowedEnvVars": ["ENGRAM_TOKEN", "ENGRAM_DISABLE"]
+        }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{
+          "type": "http",
+          "url": "http://127.0.0.1:47613/hooks/stop",
+          "timeout": 5,
+          "headers": { "Authorization": "Bearer $ENGRAM_TOKEN", "X-Engram-Disable": "${ENGRAM_DISABLE}" },
+          "allowedEnvVars": ["ENGRAM_TOKEN", "ENGRAM_DISABLE"]
+        }]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [{
+          "type": "http",
+          "url": "http://127.0.0.1:47613/hooks/precompact",
+          "timeout": 5,
+          "headers": { "Authorization": "Bearer $ENGRAM_TOKEN", "X-Engram-Disable": "${ENGRAM_DISABLE}" },
+          "allowedEnvVars": ["ENGRAM_TOKEN", "ENGRAM_DISABLE"]
+        }]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [{
+          "type": "http",
+          "url": "http://127.0.0.1:47613/hooks/session-end",
+          "timeout": 2,
+          "headers": { "Authorization": "Bearer $ENGRAM_TOKEN", "X-Engram-Disable": "${ENGRAM_DISABLE}" },
+          "allowedEnvVars": ["ENGRAM_TOKEN", "ENGRAM_DISABLE"]
+        }]
+      }
+    ]
+  }
+}
