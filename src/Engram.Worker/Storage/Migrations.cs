@@ -12,7 +12,7 @@ internal sealed record MigrationResult(int FromVersion, int ToVersion, string? B
 /// </summary>
 internal static class Migrations
 {
-    // Phase 1: capture tables. Observations, summaries, FTS and vectors arrive in later migrations.
+    // v1 (Phase 1): capture tables. v2 (Phase 2): observations, FTS, summaries, LLM call log. Vectors arrive in Phase 4.
     private static readonly (int Version, string Sql)[] All =
     [
         (1, """
@@ -84,6 +84,78 @@ internal static class Migrations
             );
             CREATE UNIQUE INDEX ux_jobs_key ON jobs(kind, session_id, ifnull(prompt_id, ''));
             CREATE INDEX ix_jobs_due ON jobs(status, next_run_at);
+            """),
+        (2, """
+            -- The memory itself. One row per thing worth remembering from a turn.
+            CREATE TABLE observations (
+                id               INTEGER PRIMARY KEY,
+                session_id       TEXT NOT NULL REFERENCES sessions(id),
+                project_id       INTEGER REFERENCES projects(id),
+                prompt_id        TEXT,
+                type             TEXT NOT NULL,     -- decision | bugfix | feature | change | discovery | gotcha
+                title            TEXT NOT NULL,
+                narrative        TEXT NOT NULL,
+                facts            TEXT NOT NULL DEFAULT '[]',   -- JSON array of short strings
+                files            TEXT NOT NULL DEFAULT '[]',   -- JSON array of paths
+                branch           TEXT,
+                source_event_ids TEXT NOT NULL DEFAULT '[]',   -- JSON array of events.id
+                provider         TEXT NOT NULL,
+                model            TEXT NOT NULL,
+                created_at       TEXT NOT NULL
+            );
+            CREATE INDEX ix_observations_project ON observations(project_id, created_at);
+            CREATE INDEX ix_observations_session ON observations(session_id, created_at);
+
+            -- Keyword search (bm25), kept in sync by triggers. External content: the text lives once.
+            CREATE VIRTUAL TABLE observations_fts USING fts5(
+                title, narrative, facts, files,
+                content='observations', content_rowid='id', tokenize='porter unicode61');
+            CREATE TRIGGER observations_ai AFTER INSERT ON observations BEGIN
+                INSERT INTO observations_fts(rowid, title, narrative, facts, files) VALUES (new.id, new.title, new.narrative, new.facts, new.files);
+            END;
+            CREATE TRIGGER observations_ad AFTER DELETE ON observations BEGIN
+                INSERT INTO observations_fts(observations_fts, rowid, title, narrative, facts, files) VALUES ('delete', old.id, old.title, old.narrative, old.facts, old.files);
+            END;
+            CREATE TRIGGER observations_au AFTER UPDATE ON observations BEGIN
+                INSERT INTO observations_fts(observations_fts, rowid, title, narrative, facts, files) VALUES ('delete', old.id, old.title, old.narrative, old.facts, old.files);
+                INSERT INTO observations_fts(rowid, title, narrative, facts, files) VALUES (new.id, new.title, new.narrative, new.facts, new.files);
+            END;
+
+            -- Session summaries: 'checkpoint' (before a compaction; replaced each time) and 'final' (at session end).
+            CREATE TABLE summaries (
+                id            INTEGER PRIMARY KEY,
+                session_id    TEXT NOT NULL REFERENCES sessions(id),
+                project_id    INTEGER REFERENCES projects(id),
+                kind          TEXT NOT NULL,
+                request       TEXT NOT NULL,
+                investigated  TEXT NOT NULL,
+                learned       TEXT NOT NULL,
+                completed     TEXT NOT NULL,
+                next_steps    TEXT NOT NULL,
+                branch        TEXT,
+                provider      TEXT NOT NULL,
+                model         TEXT NOT NULL,
+                created_at    TEXT NOT NULL,
+                UNIQUE (session_id, kind)
+            );
+
+            -- One row per provider call: the cost log behind `engram status`.
+            CREATE TABLE llm_calls (
+                id                 INTEGER PRIMARY KEY,
+                job_id             INTEGER,
+                provider           TEXT NOT NULL,
+                model              TEXT NOT NULL,
+                ok                 INTEGER NOT NULL,
+                error              TEXT,
+                input_tokens       INTEGER,
+                output_tokens      INTEGER,
+                cache_read_tokens  INTEGER,
+                cache_write_tokens INTEGER,
+                cost_usd           REAL,          -- list-price estimate from the provider; 0 for local models
+                latency_ms         INTEGER NOT NULL,
+                created_at         TEXT NOT NULL
+            );
+            CREATE INDEX ix_llm_calls_time ON llm_calls(created_at);
             """),
     ];
 

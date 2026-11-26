@@ -28,7 +28,9 @@ public sealed class StorageTests : IDisposable
         using var c = db.Open();
         c.ExecuteScalar<string>("PRAGMA journal_mode").ShouldBe("wal");
         c.Query<string>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-            .ShouldBe(["events", "jobs", "projects", "prompts", "schema_version", "sessions"], ignoreOrder: true);
+            .ShouldBe(
+                ["events", "jobs", "llm_calls", "observations", "observations_fts", "observations_fts_config", "observations_fts_data", "observations_fts_docsize", "observations_fts_idx", "projects", "prompts", "schema_version", "sessions", "summaries"],
+                ignoreOrder: true);
         Directory.Exists(_temp.Combine("backups")).ShouldBeFalse();
     }
 

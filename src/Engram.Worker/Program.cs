@@ -4,6 +4,7 @@ using Engram.Core.Security;
 using Engram.Core.Settings;
 using Engram.Worker;
 using Engram.Worker.Capture;
+using Engram.Worker.Observer;
 using Engram.Worker.Storage;
 
 // The Engram worker: sole writer to ~/.engram/engram.db. Phase 1 = capture only.
@@ -31,6 +32,11 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(context);
 builder.Services.AddSingleton(new Database(EngramPaths.Database(home)));
 builder.Services.AddSingleton<CaptureStore>();
+builder.Services.AddSingleton<ObserverStore>();
+builder.Services.AddSingleton<JobSignal>();
+builder.Services.AddSingleton<IProcessRunner, SystemProcessRunner>();
+builder.Services.AddSingleton(sp => ObserverRuntime.Create(
+    sp.GetRequiredService<WorkerContext>(), sp.GetRequiredService<ObserverStore>(), sp.GetRequiredService<IProcessRunner>(), new HttpClient(), getEnv));
 builder.Services.AddSingleton<ProjectResolver>();
 builder.Services.AddSingleton<CaptureProcessor>();
 builder.Services.AddSingleton<CaptureQueue>();
@@ -38,6 +44,7 @@ builder.Services.AddSingleton<IdleTracker>();
 builder.Services.AddSingleton<SpoolIngestor>();
 builder.Services.AddHostedService<CaptureWriter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SpoolIngestor>());
+builder.Services.AddHostedService<JobRunner>();
 builder.Services.AddHostedService<IdleShutdownService>();
 
 var app = builder.Build();

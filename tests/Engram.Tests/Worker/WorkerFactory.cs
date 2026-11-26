@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Engram.Tests.Worker;
 
@@ -15,12 +16,14 @@ internal sealed class WorkerFactory : WebApplicationFactory<Program>
 {
     private readonly TempDir _temp = new();
 
-    public WorkerFactory(string? settingsJson = null)
+    private readonly Engram.Worker.Observer.ILlmClient? _fakeClient;
+
+    /// <param name="settingsJson">Defaults to <c>observer.provider = none</c> so a test never launches the real claude.</param>
+    /// <param name="fakeClient">Replaces the summarizer provider (the observer then runs for real, against this fake).</param>
+    public WorkerFactory(string? settingsJson = null, Engram.Worker.Observer.ILlmClient? fakeClient = null)
     {
-        if (settingsJson is not null)
-        {
-            File.WriteAllText(EngramPaths.SettingsFile(Home), settingsJson);
-        }
+        _fakeClient = fakeClient;
+        File.WriteAllText(EngramPaths.SettingsFile(Home), settingsJson ?? """{ "observer": { "provider": "none" } }""");
 
         Token = WorkerToken.ReadOrCreate(Home);
     }
@@ -31,7 +34,20 @@ internal sealed class WorkerFactory : WebApplicationFactory<Program>
 
     public TempDir Temp => _temp;
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseSetting("Engram:Home", Home);
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Engram:Home", Home);
+        if (_fakeClient is { } fake)
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<Engram.Worker.Observer.ObserverRuntime>();
+                services.AddSingleton(sp => new Engram.Worker.Observer.ObserverRuntime(
+                    new Engram.Worker.Observer.Observer(fake, sp.GetRequiredService<Engram.Worker.Observer.ObserverStore>(), sp.GetRequiredService<Engram.Worker.WorkerContext>().Settings.Observer, new Redactor()),
+                    fake));
+            });
+        }
+    }
 
     public HttpClient CreateHookClient()
     {
