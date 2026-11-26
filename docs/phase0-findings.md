@@ -209,13 +209,13 @@ SessionStart (~90 ms is fine there).
 - [x] Contract tests pass on real fixtures
 - [x] HTTP hooks and header interpolation confirmed on 2.1.330 / 2.1.332
 - [x] Cold-start numbers recorded (5a, 5b)
-- [ ] Decisions (recommended defaults; confirm or change):
-  - [ ] **Capture per tool (PostToolUse).** PostToolBatch carries the model-facing text, not the
+- [x] Decisions (approved by the user 2026-11-26):
+  - [x] **Capture per tool (PostToolUse).** PostToolBatch carries the model-facing text, not the
         structured result. Keep PostToolBatch unregistered.
-  - [ ] **`fork` → treat like `resume`** (skip full injection). Not observed anyway.
-  - [ ] **WSL → separate worker inside WSL** for now (NAT works today, no global `.wslconfig` change).
+  - [x] **`fork` → treat like `resume`** (skip full injection). Not observed anyway.
+  - [x] **WSL → separate worker inside WSL** for now (NAT works today, no global `.wslconfig` change).
         Revisit mirrored networking later.
-  - [ ] **Use Claude Code's `prompt_id` as the turn key.** Present on every event.
-  - [ ] **Tool handling:** skip `SubagentHandback` and `ToolSearch`; drop `originalFile` and
+  - [x] **Use Claude Code's `prompt_id` as the turn key.** Present on every event.
+  - [x] **Tool handling:** skip `SubagentHandback` and `ToolSearch`; drop `originalFile` and
         `file.content` bodies; truncate other string fields to 4 KB per capture; skip
         `UserPromptSubmit` prompts that start with `<agent-message`.

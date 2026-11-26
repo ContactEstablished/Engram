@@ -77,14 +77,15 @@ pwsh spike/measure-coldstart.ps1                         # AOT cold-start timing
 
 ## Current phase
 
-**Phase 0 — spike: capture real hook payloads. Tooling complete; waiting on the manual run.**
+**Phase 0 complete (gate approved 2026-11-26). Phase 1 next.**
 
-Built: `engram spike capture | listen | fixtures`, `spike/settings.local.json`, the run book
-(`spike/README.md`), `spike/measure-coldstart.ps1` (AOT numbers in `docs/phase0-findings.md` §5a), and
-contract tests over `tests/fixtures/hooks` and `tests/fixtures/hooks-synthetic`.
+Real fixtures for all 11 events are in `tests/fixtures/hooks`; findings and the approved decisions are in
+`docs/phase0-findings.md` (§0 surprises, §11 decisions). Decisions that bind Phase 1:
 
-Next (user): run `spike/README.md` on Windows and WSL, run `engram spike fixtures`, commit the reviewed
-fixtures, and fill in `docs/phase0-findings.md`, including the decisions in its §11 gate.
-
-**Do not start Phase 1** (worker logic, SQLite schema, observer, MCP) until the user has reviewed the
-Phase 0 gate.
+- Capture from `PostToolUse` / `PostToolUseFailure`; don't register `PostToolBatch`.
+- SessionStart `fork` is treated like `resume`.
+- WSL runs its own worker inside WSL (NAT networking); no `.wslconfig` changes.
+- Claude Code's `prompt_id` is the turn key.
+- Skip `SubagentHandback` and `ToolSearch`; drop `originalFile` and `file.content` bodies; truncate other
+  strings to 4 KB; `UserPromptSubmit` prompts starting with `<agent-message` are subagent hand-backs,
+  not user prompts.
