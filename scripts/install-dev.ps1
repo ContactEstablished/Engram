@@ -97,7 +97,7 @@ if (-not (Confirm-Change "Copy engram.exe and engram-worker.exe to $bin and add 
 $existing = Join-Path $bin 'engram.exe'
 if (Test-Path $existing) {
     Invoke-Step 'stop the running worker (it locks its exe)' {
-        & $existing worker stop | Out-Null
+        & $existing worker stop 2>&1 | Out-Null   # older builds don't know this command; that's fine
         Get-Process engram-worker -ErrorAction SilentlyContinue |
             Where-Object { $_.Path -eq (Join-Path $bin 'engram-worker.exe') } |
             ForEach-Object { $_.WaitForExit(10000) | Out-Null }
@@ -142,15 +142,25 @@ if ($Wsl) {
     $sh = @'
 set -e
 cli="$1"; worker="$2"; hooks="$3"; yes="$4"
-mkdir -p "$HOME/.local/bin"
-if [ -x "$HOME/.local/bin/engram" ]; then "$HOME/.local/bin/engram" worker stop >/dev/null 2>&1 || true; sleep 1; fi
-cp "$cli" "$HOME/.local/bin/engram"
-cp "$worker" "$HOME/.local/bin/engram-worker"
-chmod +x "$HOME/.local/bin/engram" "$HOME/.local/bin/engram-worker"
-if [ "$yes" = "1" ]; then "$HOME/.local/bin/engram" install --yes; else "$HOME/.local/bin/engram" install; fi
+# WSL forwards its localhost ports to Windows, so the WSL worker can't share the Windows worker's port.
+port=47614
+bin="$HOME/.local/bin"
+mkdir -p "$bin"
+# Phase 0 leftovers: the spike listener holds the port and the old binary.
+pkill -f "engram spike listen" 2>/dev/null || true
+if [ -x "$bin/engram" ]; then ENGRAM_PORT=$port "$bin/engram" worker stop >/dev/null 2>&1 || true; sleep 1; fi
+# Copy then rename: replacing a running binary in place fails with "Text file busy".
+for pair in "$cli:engram" "$worker:engram-worker"; do
+  src="${pair%%:*}"; name="${pair##*:}"
+  cp "$src" "$bin/.$name.new" && chmod +x "$bin/.$name.new" && mv -f "$bin/.$name.new" "$bin/$name"
+done
+if [ "$yes" = "1" ]; then "$bin/engram" install --yes; else "$bin/engram" install; fi
+settings="$HOME/.engram/settings.json"
+sed -i -E "s/\"port\": *[0-9]+/\"port\": $port/" "$settings"
+grep -q "\"port\": $port" "$settings" || { echo "could not set worker.port=$port in $settings"; exit 1; }
 sandbox="$HOME/src/engram-sandbox"
 mkdir -p "$sandbox/.claude"
-cp "$hooks" "$sandbox/.claude/settings.local.json"
+sed "s/127.0.0.1:47613/127.0.0.1:$port/g" "$hooks" > "$sandbox/.claude/settings.local.json"
 if [ ! -d "$sandbox/.git" ]; then
   cd "$sandbox"
   git init -q
@@ -158,7 +168,7 @@ if [ ! -d "$sandbox/.git" ]; then
   git add notes.txt
   git -c user.name=engram -c user.email=engram@localhost commit -qm init
 fi
-echo "WSL: engram $("$HOME/.local/bin/engram" --version) installed; hooks in $sandbox/.claude/settings.local.json"
+echo "WSL: engram $("$bin/engram" --version) installed; worker port $port; hooks in $sandbox/.claude/settings.local.json"
 '@
     Invoke-Step 'copy binaries, run engram install, set up the sandbox inside WSL' {
         $scriptWin = Join-Path $root 'artifacts\wsl-install-dev.sh'

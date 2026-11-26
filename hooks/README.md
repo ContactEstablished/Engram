@@ -24,7 +24,7 @@ The URL path after `/hooks/` is only a label; the worker routes on `hook_event_n
 - `engram` and `engram-worker` on PATH (`scripts/install-dev.ps1` does this).
 - `ENGRAM_TOKEN` in Claude Code's environment, equal to `~/.engram/token` (`engram install` sets it).
   Without it the HTTP hooks are rejected (401) and Claude Code shows a non-blocking hook error.
-- Port 47613 free. If you change `worker.port` in settings, change the URLs here too.
+- Port 47613 free (47614 for the WSL worker; WSL forwards its ports to Windows, so the two must differ). If you change `worker.port` in settings, change the URLs here too.
 
 ## Checking it works
 

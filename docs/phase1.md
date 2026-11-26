@@ -42,7 +42,7 @@ Phase 2. Retried hooks are idempotent.
 - **Default truncation 4 KB** (plan: 8 KB), per the Phase 0 decision. Setting: `capture.maxStringBytes`.
 - **`engram install` doesn't create the database**; the worker creates and migrates it at startup (the
   CLI stays free of SQLite).
-- **WSL runs its own worker and database** (Phase 0 decision), not one Windows worker.
+- **WSL runs its own worker and database** (Phase 0 decision), not one Windows worker. It uses **port 47614**: WSL forwards its localhost ports to Windows, so it can't share 47613 with the Windows worker. `install-dev.ps1 -Wsl` sets `worker.port` and the sandbox hook URLs.
 - **Settings are read at worker start**, not live-reloaded. Restart with `engram worker stop` (the next
   SessionStart starts it again).
 - Tool matcher adds `NotebookEdit`, `PowerShell` and `Agent` (Claude Code's current name for `Task`).
