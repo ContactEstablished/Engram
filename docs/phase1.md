@@ -60,7 +60,7 @@ Phase 2. Retried hooks are idempotent.
 
 Budgets from the plan: HTTP hooks < 50 ms p95 ✔, SessionStart < 300 ms ✔ (warm).
 
-## Phase 1 gate (your run)
+## Phase 1 gate (passed 2026-11-26: real sessions captured on Windows and WSL)
 
 1. Install (from the repo root, in `pwsh`):
    ```powershell

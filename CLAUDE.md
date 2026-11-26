@@ -88,7 +88,7 @@ pwsh spike/measure-coldstart.ps1                         # AOT cold-start timing
 
 ## Current phase
 
-**Phase 1 — capture: built; waiting on the user's gate run** (`docs/phase1.md` → "Phase 1 gate").
+**Phase 1 — capture: complete (gate passed 2026-11-26** on Windows and WSL; see `docs/phase1.md`).
 Scope: hooks → worker → SQLite (prompts, tool events, pending jobs). **Do not start Phase 2** (observer /
 summarizer) until the user confirms real sessions land in the database on Windows and WSL.
 
