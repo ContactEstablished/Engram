@@ -7,7 +7,18 @@ It stores them in one SQLite file under your profile and feeds the relevant ones
 Search is exposed over MCP. It sends no telemetry. The only outbound traffic goes to the summarizer you
 configure.
 
-> Status: **Phase 0** (spike). Only the payload-capture tooling exists so far. See `spike/README.md`.
+> Status: **Phase 1** (capture). Hooks store each turn's prompt and tool calls, redacted, in
+> `~/.engram/engram.db`. Summaries, context injection and search come in Phases 2–3. See `docs/phase1.md`.
+
+## Try it (dogfooding)
+
+```powershell
+pwsh scripts/install-dev.ps1          # add -Wsl to install into WSL too
+# new terminal:
+engram status
+```
+
+Hooks go into a sandbox repo only (`hooks/README.md`).
 
 ## Build
 
@@ -28,3 +39,5 @@ The published CLI is at `artifacts/publish/Engram.Cli/release_win-x64/engram.exe
 - `CLAUDE.md`: stack, layout, ground rules, current phase
 - `spike/README.md`: Phase 0 run book
 - `docs/phase0-findings.md`: Phase 0 results
+- `docs/phase1.md`: Phase 1 design, measurements and gate run book
+- `hooks/README.md`: the capture hooks

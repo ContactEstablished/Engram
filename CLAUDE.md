@@ -29,15 +29,17 @@ changing architecture.
 ```
 Engram.slnx
 src/
-  Engram.Core/      Hook payload models, HookJsonContext (STJ source gen), HookPayloadReader. AOT-compatible.
-  Engram.Cli/       `engram` console app, PublishAot=true. Phase 0: `spike capture|listen|fixtures`.
-  Engram.Worker/    ASP.NET Core minimal API. Phase 0: GET /health only.
+  Engram.Core/      Hook payload models + reader, settings, redaction, worker token, paths. AOT-compatible.
+  Engram.Cli/       `engram` (Native AOT): hook session-start, install, status, worker start|stop; spike tools.
+  Engram.Worker/    `engram-worker` (ASP.NET Core, self-contained single file): Capture/, Storage/, Hosting/.
 tests/
-  Engram.Tests/     Unit, contract and worker tests.
-  fixtures/hooks/            Real, sanitized hook payloads (written by `engram spike fixtures`).
-  fixtures/hooks-synthetic/  Payloads copied from the hooks docs; used until real captures exist.
-spike/              Phase 0 sample settings, run book, cold-start script.
-docs/               Findings and design notes.
+  Engram.Tests/     Unit, contract and worker tests (WorkerFactory = in-process worker on a temp home).
+  fixtures/hooks/            Real, sanitized hook payloads from Phase 0 (replayed by FixtureReplayTests).
+  fixtures/hooks-synthetic/  Payloads copied from the hooks docs.
+hooks/              Hook settings for a sandbox repo's .claude/settings.local.json.
+scripts/            install-dev.ps1 (build + install on Windows, -Wsl for WSL).
+spike/              Phase 0 kit (kept for re-capturing fixtures after Claude Code upgrades).
+docs/               Findings, phase notes and design notes.
 artifacts/          All build output (UseArtifactsOutput). Git-ignored.
 ```
 
@@ -47,6 +49,8 @@ artifacts/          All build output (UseArtifactsOutput). Git-ignored.
 dotnet build                                            # warnings are errors
 dotnet test
 dotnet publish src/Engram.Cli -c Release -r win-x64     # -> artifacts/publish/Engram.Cli/release_win-x64/engram.exe
+dotnet publish src/Engram.Worker -c Release -r win-x64 --self-contained   # -> .../Engram.Worker/release_win-x64/engram-worker.exe
+pwsh scripts/install-dev.ps1 [-Wsl] [-SkipBuild] [-DryRun]                # build + install for dogfooding
 pwsh spike/measure-coldstart.ps1                         # AOT cold-start timings for `engram spike capture`
 ```
 
@@ -60,7 +64,7 @@ pwsh spike/measure-coldstart.ps1                         # AOT cold-start timing
 - Hooks must fail open: never block or slow Claude Code, and print nothing to stdout unless injecting context
   on purpose (SessionStart stdout becomes context).
 - Every hook handler exits immediately when `ENGRAM_DISABLE=1` (the recursion guard for later summarizer runs).
-- Don't touch the user-level `~/.claude/settings.json`. Phase 0 hooks go in a sandbox repo's
+- Don't touch the user-level `~/.claude/settings.json`. Until the plugin (Phase 5), hooks go in a sandbox repo's
   `.claude/settings.local.json` only.
 - Ask before installing anything globally.
 
@@ -74,10 +78,21 @@ pwsh spike/measure-coldstart.ps1                         # AOT cold-start timing
 - Keep the CLI dependency-free; it is on the hook hot path and is AOT-compiled.
 - Tests run on Microsoft.Testing.Platform (`global.json` → `test.runner`). Use `TestContext.Current.CancellationToken`.
 - Stage files explicitly when committing; don't use `git add -A`.
+- The worker is the only database writer. Hook endpoints only authenticate and enqueue; filtering, git and
+  SQLite work happen on the background `CaptureWriter`. Endpoints always answer an empty 200 for events
+  Engram chooses not to store.
+- Schema changes are new entries in `Storage/Migrations.cs`; never edit a released migration.
+- Worker tests use `WorkerFactory` (temp `Engram:Home`); never let a test touch the real `~/.engram`.
+- Settings records use `{ get; set; }`, not `init`: STJ source generation drops initializer defaults for
+  missing keys with `init` properties.
 
 ## Current phase
 
-**Phase 0 complete (gate approved 2026-11-26). Phase 1 next.**
+**Phase 1 — capture: built; waiting on the user's gate run** (`docs/phase1.md` → "Phase 1 gate").
+Scope: hooks → worker → SQLite (prompts, tool events, pending jobs). **Do not start Phase 2** (observer /
+summarizer) until the user confirms real sessions land in the database on Windows and WSL.
+
+Phase 0 complete (gate approved 2026-11-26).
 
 Real fixtures for all 11 events are in `tests/fixtures/hooks`; findings and the approved decisions are in
 `docs/phase0-findings.md` (§0 surprises, §11 decisions). Decisions that bind Phase 1:
