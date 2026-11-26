@@ -1,13 +1,68 @@
-// Phase 0 skeleton: health endpoint only. Capture, storage and observer logic arrive in Phase 1+.
+using System.Globalization;
+using Engram.Core;
+using Engram.Core.Security;
+using Engram.Core.Settings;
+using Engram.Worker;
+using Engram.Worker.Capture;
+using Engram.Worker.Storage;
+
+// The Engram worker: sole writer to ~/.engram/engram.db. Phase 1 = capture only.
 var builder = WebApplication.CreateSlimBuilder(args);
+Func<string, string?> getEnv = Environment.GetEnvironmentVariable;
+
+// Tests point Engram:Home at a temp folder; real runs use ENGRAM_HOME or ~/.engram.
+var home = builder.Configuration["Engram:Home"] ?? EngramPaths.Home(getEnv);
+using var instance = SingleInstanceLock.TryAcquire(home);
+if (instance is null)
+{
+    Console.Error.WriteLine($"engram-worker: already running for {home}");
+    return 0;
+}
+
+var (settings, settingsWarnings) = SettingsLoader.Load(home, getEnv);
+var context = new WorkerContext(home, settings, WorkerToken.ReadOrCreate(home), WorkerContext.DetectPlatform(getEnv));
 
 // Loopback only. Never bind to all interfaces.
-builder.WebHost.UseUrls(builder.Configuration["Urls"] ?? "http://127.0.0.1:47613");
+builder.WebHost.UseUrls(builder.Configuration["Urls"] ?? $"http://127.0.0.1:{settings.Worker.Port}");
+builder.Logging.AddProvider(new FileLoggerProvider(EngramPaths.Logs(home)));
+
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton(context);
+builder.Services.AddSingleton(new Database(EngramPaths.Database(home)));
+builder.Services.AddSingleton<CaptureStore>();
+builder.Services.AddSingleton<ProjectResolver>();
+builder.Services.AddSingleton<CaptureProcessor>();
+builder.Services.AddSingleton<CaptureQueue>();
+builder.Services.AddSingleton<IdleTracker>();
+builder.Services.AddSingleton<SpoolIngestor>();
+builder.Services.AddHostedService<CaptureWriter>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SpoolIngestor>());
+builder.Services.AddHostedService<IdleShutdownService>();
 
 var app = builder.Build();
+var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Engram.Worker");
+foreach (var warning in settingsWarnings)
+{
+    log.LogWarning("Settings: {Warning}", warning);
+}
 
-app.MapGet("/health", () => Results.Text("""{"status":"ok"}""", "application/json"));
+var migration = app.Services.GetRequiredService<Database>().Initialize(EngramPaths.Backups(home), TimeProvider.System);
+log.LogInformation(
+    "Worker {Version} starting: home {Home}, platform {Platform}, schema v{From} -> v{To}{Backup}",
+    typeof(WorkerContext).Assembly.GetName().Version?.ToString(3),
+    home,
+    context.Platform,
+    migration.FromVersion,
+    migration.ToVersion,
+    migration.BackupPath is null ? string.Empty : $", backup {migration.BackupPath}");
 
-app.Run();
+app.UseMiddleware<LocalOnlyMiddleware>();
+app.MapGet("/health", () => Results.Text(
+    string.Create(CultureInfo.InvariantCulture, $$"""{"status":"ok","pid":{{Environment.ProcessId}},"schema":{{migration.ToVersion}}}"""),
+    "application/json"));
+app.MapHookEndpoints();
+
+await app.RunAsync().ConfigureAwait(false);
+return 0;
 
 public partial class Program;
