@@ -1,0 +1,28 @@
+{
+  "session_id": "1f0319d4-bafb-4ae1-b89a-4be5bd9c97da",
+  "transcript_path": "<HOME>\\.claude\\projects\\C--Users-<USER>-src-engram-sandbox\\1f0319d4-bafb-4ae1-b89a-4be5bd9c97da.jsonl",
+  "cwd": "<HOME>\\src\\engram-sandbox",
+  "scratchpad_dir": "<HOME>\\AppData\\Local\\Temp\\claude\\b489c997a7d295f3\\1f0319d4-bafb-4ae1-b89a-4be5bd9c97da\\scratchpad",
+  "prompt_id": "3937a158-e84a-4de1-86ac-5932ff312f95",
+  "permission_mode": "auto",
+  "agent_id": "ab2c8f461b12baaa7",
+  "agent_type": "Explore",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "find . -path ./.git -prune -o -type f -print | sed 's|^\\./||' | sort; echo \"---tracked---\"; git ls-files | wc -l; git status --short",
+    "description": "List all files in repo excluding .git"
+  },
+  "tool_response": {
+    "stdout": ".claude/settings.local.json\ngreet.txt\nnotes.txt\nunicode.txt\n---tracked---\n1\n?? greet.txt\n?? unicode.txt",
+    "stderr": "",
+    "interrupted": false,
+    "isImage": false,
+    "noOutputExpected": false
+  },
+  "tool_use_id": "toolu_01PxouShjhC3FQ3TeBT6wvyu",
+  "duration_ms": 441
+}

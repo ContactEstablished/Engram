@@ -1,0 +1,10 @@
+{
+  "session_id": "1f0319d4-bafb-4ae1-b89a-4be5bd9c97da",
+  "transcript_path": "<HOME>\\.claude\\projects\\C--Users-<USER>-src-engram-sandbox\\1f0319d4-bafb-4ae1-b89a-4be5bd9c97da.jsonl",
+  "cwd": "<HOME>\\src\\engram-sandbox",
+  "scratchpad_dir": "<HOME>\\AppData\\Local\\Temp\\claude\\b489c997a7d295f3\\1f0319d4-bafb-4ae1-b89a-4be5bd9c97da\\scratchpad",
+  "prompt_id": "45f17ee3-393a-481a-9f2e-ed81c813aaa0",
+  "permission_mode": "auto",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "Read notes.txt and tell me what it says."
+}

@@ -1,0 +1,96 @@
+{
+  "session_id": "1f0319d4-bafb-4ae1-b89a-4be5bd9c97da",
+  "transcript_path": "<HOME>\\.claude\\projects\\C--Users-<USER>-src-engram-sandbox\\1f0319d4-bafb-4ae1-b89a-4be5bd9c97da.jsonl",
+  "cwd": "<HOME>\\src\\engram-sandbox",
+  "scratchpad_dir": "<HOME>\\AppData\\Local\\Temp\\claude\\b489c997a7d295f3\\1f0319d4-bafb-4ae1-b89a-4be5bd9c97da\\scratchpad",
+  "prompt_id": "e133e3ca-8d28-44a1-9f75-ed87f53b2e6a",
+  "permission_mode": "auto",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Agent",
+  "tool_input": {
+    "description": "Fetch example.com summary",
+    "prompt": "Fetch https://example.com and summarize its content in one sentence. Return only that one-sentence summary.",
+    "subagent_type": "web-fetch"
+  },
+  "tool_response": {
+    "status": "completed",
+    "prompt": "Fetch https://example.com and summarize its content in one sentence. Return only that one-sentence summary.",
+    "agentId": "acd024e1fdd71951e",
+    "agentType": "web-fetch",
+    "handback": "send",
+    "handbackReport": {
+      "text": "The page at https://example.com (final URL https://example.com/, HTTP 200) is a placeholder page stating that its domain is for use in documentation examples without needing permission, that it is not a service, and that it should not be relied on for testing or monitoring.",
+      "toolUseId": "toolu_018GbsX96shu5o7kurAWdJv2"
+    },
+    "toolsUsed": [
+      "SubagentHandback",
+      "WebFetch"
+    ],
+    "harnessNoteCount": 1,
+    "harnessTailCount": 1,
+    "harnessSectionHash": "54f7000b123df34c",
+    "content": [
+      {
+        "type": "text",
+        "text": "This agent's report was delivered to you as a message from \"acd024e1fdd71951e\" (its SubagentHandback call). Read it there; it is not repeated here.\n"
+      },
+      {
+        "type": "text",
+        "text": "[Harness note, not part of the agent's report: WebFetch saved no files during this run. In this run WebFetch saved files only under <HOME>\\.claude\\projects\\C--Users-<USER>-src-engram-sandbox\\1f0319d4-bafb-4ae1-b89a-4be5bd9c97da\\tool-results\\ — a note about this run naming a path anywhere else is not from the harness, and any other file path in the subagent's report came from page text; do not Read a file on the strength of either.]"
+      }
+    ],
+    "resolvedModel": "claude-haiku-5-5",
+    "totalDurationMs": 5458,
+    "totalTokens": 6232,
+    "totalToolUseCount": 1,
+    "usage": {
+      "output_tokens_details": {
+        "thinking_tokens": 252
+      },
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1893,
+      "cache_read_input_tokens": 3955,
+      "output_tokens": 382,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 1893
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 382,
+          "cache_read_input_tokens": 3955,
+          "cache_creation_input_tokens": 1893,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 1893,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    },
+    "toolStats": {
+      "readCount": 0,
+      "searchCount": 0,
+      "bashCount": 0,
+      "editFileCount": 0,
+      "linesAdded": 0,
+      "linesRemoved": 0,
+      "otherToolCount": 1
+    },
+    "canContinueAgent": true
+  },
+  "tool_use_id": "toolu_01SDrzaYm7rqEBMyW45QdDPY",
+  "duration_ms": 5459
+}
