@@ -110,8 +110,9 @@ internal sealed class CaptureProcessor
                     IsError: true, ToLong(p.DurationMs), at));
                 break;
             case StopPayload p:
+                // Stop has no tool_use_id; key it on the turn so a retried hook is stored once.
                 _store.InsertEvent(new EventInsert(
-                    p.SessionId, p.PromptId, p.HookEventName, null, null, p.AgentId, null, null,
+                    p.SessionId, p.PromptId, p.HookEventName, null, p.PromptId is { } turn ? $"stop:{p.SessionId}:{turn}" : null, p.AgentId, null, null,
                     p.LastAssistantMessage is { } m ? _shaper.ShapeText(m) : null,
                     IsError: false, null, at));
                 _store.EnqueueJob(JobKinds.ObserveTurn, p.SessionId, p.PromptId, at);

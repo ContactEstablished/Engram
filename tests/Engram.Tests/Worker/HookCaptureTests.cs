@@ -118,6 +118,7 @@ public sealed class HookCaptureTests : IDisposable
         await SendAsync(tool, tool, stop, stop);
 
         _factory.Count("SELECT count(*) FROM events WHERE hook_event = 'PostToolUse'").ShouldBe(1);
+        _factory.Count("SELECT count(*) FROM events WHERE hook_event = 'Stop'").ShouldBe(1);
         _factory.Count("SELECT count(*) FROM jobs").ShouldBe(1);
     }
 
