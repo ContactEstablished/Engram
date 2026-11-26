@@ -288,6 +288,23 @@ public sealed class ObserverPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Open_jobs_exclude_finished_and_parked_ones()
+    {
+        Turn();
+        _store.OpenJobCount().ShouldBe(1);
+        _llm.Fail("x").Fail("x").Fail("x");
+
+        await RunNextAsync();
+        _store.OpenJobCount().ShouldBe(1, "still retrying");
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        await RunNextAsync();
+        _clock.Advance(TimeSpan.FromMinutes(3));
+        await RunNextAsync();
+
+        _store.OpenJobCount().ShouldBe(0, "parked");
+    }
+
+    [Fact]
     public async Task The_hourly_call_count_only_includes_the_last_hour()
     {
         Turn();

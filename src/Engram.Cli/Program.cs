@@ -14,6 +14,7 @@ internal static class Program
           engram install [--yes] [--rotate-token] [--no-env]
                                                     Create ~/.engram, default settings and the worker token; export ENGRAM_TOKEN
           engram status                             Show whether the worker is running and where things are
+          engram recent [--limit N]                 Show the latest observations and session summaries
           engram worker start | stop                Start the worker in the background, or stop it
           engram hook session-start                 SessionStart hook handler (registers the session, starts the worker)
 
@@ -56,6 +57,7 @@ internal static class Program
             {
                 ["install", .. var rest] => InstallCommand.Run(rest),
                 ["status"] => StatusCommand.Run(Environment.GetEnvironmentVariable, Console.Out),
+                ["recent", .. var recentArgs] => RecentCommand.Run(recentArgs, Environment.GetEnvironmentVariable, Console.Out),
                 ["worker", "start"] => StatusCommand.StartWorker(Environment.GetEnvironmentVariable, Console.Out),
                 ["worker", "stop"] => StatusCommand.StopWorker(Environment.GetEnvironmentVariable, Console.Out),
                 ["spike", "listen", .. var rest] => SpikeListenCommand.Run(rest),

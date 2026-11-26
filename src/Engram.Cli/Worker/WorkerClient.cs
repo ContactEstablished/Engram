@@ -71,19 +71,60 @@ internal static class WorkerClient
                 }
             }
 
-            var text = Encoding.UTF8.GetString(response.GetBuffer(), 0, (int)response.Length);
-            var parts = text.Split(' ', 3);
-            if (parts.Length < 2 || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var status))
-            {
-                return (null, null);
-            }
-
-            var bodyStart = text.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-            return (status, bodyStart >= 0 ? text[(bodyStart + 4)..] : string.Empty);
+            return ParseResponse(response.GetBuffer().AsSpan(0, (int)response.Length));
         }
         catch (Exception ex) when (ex is SocketException or OperationCanceledException or IOException or ObjectDisposedException)
         {
             return (null, null);
         }
+    }
+
+    /// <summary>Splits an HTTP/1.1 response into status and body, decoding <c>Transfer-Encoding: chunked</c>.</summary>
+    internal static (int? Status, string? Body) ParseResponse(ReadOnlySpan<byte> raw)
+    {
+        var headEnd = raw.IndexOf("\r\n\r\n"u8);
+        var head = Encoding.ASCII.GetString(headEnd >= 0 ? raw[..headEnd] : raw);
+        var statusLine = head.Split("\r\n", 2)[0].Split(' ', 3);
+        if (statusLine.Length < 2 || !int.TryParse(statusLine[1], NumberStyles.None, CultureInfo.InvariantCulture, out var status))
+        {
+            return (null, null);
+        }
+
+        if (headEnd < 0)
+        {
+            return (status, string.Empty);
+        }
+
+        var body = raw[(headEnd + 4)..];
+        var chunked = head.Contains("transfer-encoding: chunked", StringComparison.OrdinalIgnoreCase);
+        return (status, Encoding.UTF8.GetString(chunked ? DecodeChunked(body) : body));
+    }
+
+    private static byte[] DecodeChunked(ReadOnlySpan<byte> body)
+    {
+        var result = new List<byte>(body.Length);
+        while (!body.IsEmpty)
+        {
+            var lineEnd = body.IndexOf("\r\n"u8);
+            if (lineEnd < 0)
+            {
+                break;
+            }
+
+            var sizeText = Encoding.ASCII.GetString(body[..lineEnd]);
+            var semicolon = sizeText.IndexOf(';', StringComparison.Ordinal);
+            if (!int.TryParse(semicolon >= 0 ? sizeText[..semicolon] : sizeText, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var size) || size == 0)
+            {
+                break;
+            }
+
+            body = body[(lineEnd + 2)..];
+            var take = Math.Min(size, body.Length);
+            result.AddRange(body[..take].ToArray());
+            body = body[take..];
+            body = body.Length >= 2 ? body[2..] : [];
+        }
+
+        return [.. result];
     }
 }

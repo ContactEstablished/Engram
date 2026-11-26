@@ -71,6 +71,13 @@ internal sealed class ObserverStore(Database database, TimeProvider time)
         c.Execute("UPDATE jobs SET status = 'done', last_error = @note, updated_at = @now WHERE id = @id", new { id = job.Id, note, now = Now() });
     }
 
+    /// <summary>Jobs waiting or running; parked jobs don't count (they need attention, not the worker).</summary>
+    public long OpenJobCount()
+    {
+        using var c = database.Open();
+        return c.ExecuteScalar<long>("SELECT count(*) FROM jobs WHERE status IN ('pending', 'running')");
+    }
+
     public long CallsInLastHour()
     {
         using var c = database.Open();

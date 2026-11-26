@@ -11,7 +11,7 @@ internal sealed class IdleTracker(TimeProvider time)
 }
 
 /// <summary>Stops the worker after <c>worker.idleShutdownMinutes</c> without requests (0 = never).</summary>
-internal sealed partial class IdleShutdownService(IdleTracker idle, WorkerContext context, IHostApplicationLifetime lifetime, ILogger<IdleShutdownService> logger) : BackgroundService
+internal sealed partial class IdleShutdownService(IdleTracker idle, WorkerContext context, Engram.Worker.Observer.ObserverStore jobs, Engram.Worker.Observer.ObserverRuntime runtime, IHostApplicationLifetime lifetime, ILogger<IdleShutdownService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -25,7 +25,8 @@ internal sealed partial class IdleShutdownService(IdleTracker idle, WorkerContex
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
         {
-            if (idle.IdleFor >= limit)
+            // Queued summaries still need the worker; it stops once they are done (or parked).
+            if (idle.IdleFor >= limit && (runtime.Observer is null || jobs.OpenJobCount() == 0))
             {
                 LogIdle(minutes);
                 lifetime.StopApplication();
