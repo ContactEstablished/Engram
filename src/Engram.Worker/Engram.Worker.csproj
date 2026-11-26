@@ -3,9 +3,20 @@
     <RootNamespace>Engram.Worker</RootNamespace>
     <AssemblyName>engram-worker</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Published self-contained single-file ReadyToRun (not AOT: Dapper uses reflection). -->
+    <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Dapper" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Engram.Core\Engram.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Engram.Tests" />
   </ItemGroup>
 </Project>

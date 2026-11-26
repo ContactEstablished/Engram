@@ -3,6 +3,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
+  <ItemGroup Label="Worker">
+    <!-- Bundles e_sqlite3 with FTS5. Keep in step with the SDK's runtime (10.0.15). -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+    <PackageVersion Include="Dapper" Version="2.1.100" />
+  </ItemGroup>
   <ItemGroup Label="Tests">
     <PackageVersion Include="xunit.v3" Version="4.0.3" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
