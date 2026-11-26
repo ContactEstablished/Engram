@@ -25,7 +25,7 @@ internal static class HookSettings
     public static readonly string[] Events = [.. Plan.Select(p => p.Event)];
 
     /// <summary>Adds Engram's hooks to <paramref name="root"/> (replacing earlier Engram entries). Returns how many events were set.</summary>
-    public static int Apply(JsonObject root, int port, string toolMatcher)
+    public static int Apply(JsonObject root, int port, string toolMatcher, string engramCommand = "engram")
     {
         ArgumentNullException.ThrowIfNull(root);
         Remove(root);
@@ -41,7 +41,7 @@ internal static class HookSettings
                 group["matcher"] = matcher == "{tools}" ? toolMatcher : matcher;
             }
 
-            group["hooks"] = new JsonArray(path is null ? CommandHook(timeout) : HttpHook(port, path, timeout));
+            group["hooks"] = new JsonArray(path is null ? CommandHook(engramCommand, timeout) : HttpHook(port, path, timeout));
             groups.Add((JsonNode)group); // the non-generic overload: Add<T> is not AOT-safe
         }
 
@@ -142,10 +142,10 @@ internal static class HookSettings
             .OfType<JsonArray>()
             .SelectMany(h => h.OfType<JsonObject>());
 
-    private static JsonObject CommandHook(int timeout) => new()
+    private static JsonObject CommandHook(string command, int timeout) => new()
     {
         ["type"] = "command",
-        ["command"] = "engram",
+        ["command"] = command,
         ["args"] = new JsonArray("hook", "session-start"),
         ["timeout"] = timeout,
     };

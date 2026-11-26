@@ -14,6 +14,8 @@ configure.
 
 ## Try it (dogfooding)
 
+To turn Engram on for a real project: `engram enable <folder> [--worktrees]` (merges, never overwrites; `--dry-run` first).
+
 ```powershell
 pwsh scripts/install-dev.ps1          # add -Wsl to install into WSL too
 # new terminal:
@@ -43,3 +45,4 @@ The published CLI is at `artifacts/publish/Engram.Cli/release_win-x64/engram.exe
 - `docs/phase0-findings.md`: Phase 0 results
 - `docs/phase1.md` … `docs/phase4.md`: design, measurements and gate run books
 - `hooks/README.md`: the capture hooks
+- `docs/chorus-integration.md`: the machine-readable `enable`/`disable`/`state`/`status --json` contract for Chorus

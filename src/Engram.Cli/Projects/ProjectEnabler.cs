@@ -135,6 +135,14 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
     private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     /// <summary>
+    /// What hooks and the MCP registration run. On Windows the bare name (on the user PATH via the installer). On
+    /// Linux/WSL the absolute path of this binary: Claude Code started without a login shell (e.g. `wsl.exe -e`)
+    /// doesn't have ~/.local/bin on PATH.
+    /// </summary>
+    internal static string EngramCommand { get; } =
+        !OperatingSystem.IsWindows() && Environment.ProcessPath is { } self && Path.GetFileName(self) == "engram" ? self : "engram";
+
+    /// <summary>
     /// Every working tree of the repo that <paramref name="folder"/> belongs to: the folder itself first, then the
     /// others, each with the main working tree it belongs to (null for the main one and for non-git folders).
     /// </summary>
@@ -168,7 +176,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         var root = ReadJson(settingsPath, out var existed);
         var before = root.ToJsonString();
         var previousPort = HookSettings.RegisteredPort(root);
-        HookSettings.Apply(root, port, toolMatcher);
+        HookSettings.Apply(root, port, toolMatcher, EngramCommand);
         if (existed && before == root.ToJsonString())
         {
             actions.Add($"hooks already registered in {SettingsRelative} (port {port}), no change");
@@ -318,7 +326,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
             if (enabled)
             {
                 var expected = new JsonObject();
-                HookSettings.Apply(expected, port, toolMatcher);
+                HookSettings.Apply(expected, port, toolMatcher, EngramCommand);
                 foreach (var name in HookSettings.Events)
                 {
                     var want = EngramGroups(expected, name);
@@ -504,7 +512,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
             return;
         }
 
-        var (exit, output) = tools.Claude(folder, "mcp", "add", "--scope", "local", "engram", "--", "engram", "mcp");
+        var (exit, output) = tools.Claude(folder, "mcp", "add", "--scope", "local", "engram", "--", EngramCommand, "mcp");
         if (exit == 0)
         {
             actions.Add("registered the engram MCP server for this project (Claude Code local scope)");
@@ -525,7 +533,7 @@ internal sealed class ProjectEnabler(IProjectTools tools, string home, int port,
         var root = ReadJson(path, out var existed);
         var servers = root["mcpServers"] as JsonObject ?? [];
         root["mcpServers"] = servers;
-        var wanted = new JsonObject { ["command"] = "engram", ["args"] = new JsonArray("mcp") };
+        var wanted = new JsonObject { ["command"] = EngramCommand, ["args"] = new JsonArray("mcp") };
         if (servers["engram"]?.ToJsonString() == wanted.ToJsonString())
         {
             actions.Add($"{McpRelative} already has the engram server");
