@@ -1,0 +1,23 @@
+{
+  // Retrieval eval for `engram eval <file>` (Phase 4). Copy this file, keep it outside the repo or private,
+  // and replace the questions with ~30 you would really ask about your repos.
+  //
+  // For each question, list the observation ids that answer it. Find them with
+  //   engram search <words>        (or engram recent, engram show <id>)
+  // Mix the phrasing: some questions should share words with the memory, and some should not
+  // ("why don't we poll Telegram?" for a memory about webhooks). The second kind is where
+  // semantic search earns its keep.
+  //
+  // Run it from inside the repo the questions are about (or set "cwd"):
+  //   engram eval my-questions.json          top 5 by default
+  //   engram eval my-questions.json --k 3
+  "k": 5,
+  // "cwd": "C:/Users/you/src/chorus",
+  "questions": [
+    { "q": "why don't we poll Telegram?", "expected": [1] },
+    { "q": "what breaks after upgrading Electron?", "expected": [2] },
+    { "q": "how is the worker protected from other programs?", "expected": [8] },
+    // A question about another repo, or a cross-repo one:
+    { "q": "which repos use WAL mode?", "expected": [4], "all_repos": true }
+  ]
+}

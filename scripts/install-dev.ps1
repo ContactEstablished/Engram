@@ -126,6 +126,19 @@ Invoke-Step 'engram install (settings, token, ENGRAM_TOKEN)' {
     Invoke-Native 'engram install' { & (Join-Path $bin 'engram.exe') @installArgs }
 }
 
+Invoke-Step "check Ollama for semantic search (nomic-embed-text)" {
+    $ollama = Get-Command ollama -ErrorAction SilentlyContinue
+    if (-not $ollama) {
+        Write-Host "  Ollama not found: search stays keyword-only. Install it from https://ollama.com, then: ollama pull nomic-embed-text" -ForegroundColor Yellow
+    }
+    elseif (-not ((& $ollama.Source list 2>$null) -match '^nomic-embed-text')) {
+        Write-Host "  Run: ollama pull nomic-embed-text  (search stays keyword-only until the model is there)" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "  Ollama has nomic-embed-text"
+    }
+}
+
 Invoke-Step "hooks into $Sandbox\.claude\settings.local.json, MCP server into $Sandbox\.mcp.json" {
     New-Item -ItemType Directory -Force (Join-Path $Sandbox '.claude') | Out-Null
     Copy-Item $hooks (Join-Path $Sandbox '.claude\settings.local.json') -Force
@@ -173,6 +186,12 @@ if [ ! -d "$sandbox/.git" ]; then
   git -c user.name=engram -c user.email=engram@localhost commit -qm init
 fi
 echo "WSL: engram $("$bin/engram" --version) installed; worker port $port; hooks in $sandbox/.claude/settings.local.json"
+# Semantic search needs Ollama inside WSL; installing it needs sudo, so that is left to you.
+if command -v ollama >/dev/null 2>&1; then
+  ollama list 2>/dev/null | grep -q '^nomic-embed-text' && echo "WSL: Ollama has nomic-embed-text" || echo "WSL: run  ollama pull nomic-embed-text  to turn on semantic search"
+else
+  echo "WSL: Ollama is not installed; search stays keyword-only. To add it: curl -fsSL https://ollama.com/install.sh | sh  then  ollama pull nomic-embed-text"
+fi
 '@
     Invoke-Step 'copy binaries, run engram install, set up the sandbox inside WSL' {
         $scriptWin = Join-Path $root 'artifacts\wsl-install-dev.sh'
