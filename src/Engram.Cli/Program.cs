@@ -15,6 +15,9 @@ internal static class Program
           engram install [--yes] [--rotate-token] [--no-env]
                                                     Create ~/.engram, default settings and the worker token; export ENGRAM_TOKEN
           engram status                             Show whether the worker is running and where things are
+          engram enable [FOLDER...] [--worktrees] [--mcp local|file|none] [--dry-run] [--yes]
+                                                    Turn Engram on for projects (merges hooks into .claude/settings.local.json)
+          engram disable [FOLDER...]                Turn it off again (removes only Engram's entries)
           engram recent [--limit N]                 Show the latest observations and session summaries
           engram search WORDS [--all] [--keyword|--semantic] [--type T] [--since 14d] [--limit N]
                                                     Search memory of the current repo (or all repos)
@@ -64,6 +67,8 @@ internal static class Program
                 ["install", .. var rest] => InstallCommand.Run(rest),
                 ["status"] => StatusCommand.Run(Environment.GetEnvironmentVariable, Console.Out),
                 ["recent", .. var recentArgs] => RecentCommand.Run(recentArgs, Environment.GetEnvironmentVariable, Console.Out),
+                ["enable", .. var enableArgs] => EnableCommand.Run(true, enableArgs, Environment.GetEnvironmentVariable, Console.Out, Console.In),
+                ["disable", .. var disableArgs] => EnableCommand.Run(false, disableArgs, Environment.GetEnvironmentVariable, Console.Out, Console.In),
                 ["search", .. var searchArgs] => SearchCommand.Search(searchArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
                 ["show", .. var showArgs] => SearchCommand.Show(showArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
                 ["eval", .. var evalArgs] => EvalCommand.Run(evalArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
