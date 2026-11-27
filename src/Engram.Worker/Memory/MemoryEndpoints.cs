@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Engram.Core;
 using Engram.Core.Hooks;
 using Engram.Core.Security;
 using Engram.Worker.Capture;
+using Engram.Worker.Embedding;
 using Engram.Worker.Observer;
 using Engram.Worker.Storage;
 
@@ -20,10 +22,11 @@ internal static class MemoryEndpoints
     public static void MapMemoryEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/context", ContextAsync);
-        app.MapGet("/memory/search", Search);
+        app.MapGet("/memory/search", SearchAsync);
         app.MapGet("/memory/timeline", Timeline);
         app.MapGet("/memory/get", Get);
         app.MapPost("/memory/save", SaveAsync);
+        app.MapPost("/memory/note", NoteAsync);
         app.MapPost("/memory/forget", Forget);
     }
 
@@ -35,12 +38,15 @@ internal static class MemoryEndpoints
     /// SessionStart: registers the session (through the normal capture queue) and returns the context to inject,
     /// or an empty body when there is nothing to say.
     /// </summary>
-    private static async Task<IResult> ContextAsync(HttpContext http, WorkerContext context, CaptureQueue queue, ContextBuilder builder)
+    private static async Task<IResult> ContextAsync(HttpContext http, WorkerContext context, CaptureQueue queue, ContextBuilder builder, EmbeddingService embeddings)
     {
         if (!Authorized(http, context))
         {
             return Results.StatusCode(StatusCodes.Status401Unauthorized);
         }
+
+        // A session is starting: make sure the embedding model is loaded before Claude searches.
+        embeddings.RequestWarmUp();
 
         using var buffer = new MemoryStream();
         await http.Request.Body.CopyToAsync(buffer, http.RequestAborted).ConfigureAwait(false);
@@ -66,7 +72,7 @@ internal static class MemoryEndpoints
         }
     }
 
-    private static IResult Search(HttpContext http, WorkerContext context, MemoryStore store, ProjectResolver projects)
+    private static async Task<IResult> SearchAsync(HttpContext http, WorkerContext context, MemoryStore store, ProjectResolver projects, HybridSearcher searcher)
     {
         if (!Authorized(http, context))
         {
@@ -108,14 +114,28 @@ internal static class MemoryEndpoints
 
         var limit = int.TryParse(q["limit"], NumberStyles.None, CultureInfo.InvariantCulture, out var l) ? Math.Clamp(l, 1, 50) : DefaultSearchLimit;
         var branch = q["branch"].ToString() is { Length: > 0 } b ? b : null;
-        var rows = store.Search(new SearchQuery(text, projectId, type, since, branch, limit));
+        var mode = q["mode"].ToString().ToLowerInvariant() switch
+        {
+            "keyword" => SearchMode.Keyword,
+            "semantic" => SearchMode.Semantic,
+            _ => SearchMode.Hybrid,
+        };
+        var outcome = await searcher.SearchAsync(new SearchQuery(text, projectId, type, since, branch, limit), mode, http.RequestAborted).ConfigureAwait(false);
+        var rows = outcome.Rows;
+        var note = outcome.Note is null ? string.Empty : $" ({outcome.Note})";
         if (rows.Count == 0)
         {
-            return Text(text.Trim().Length == 0 ? $"No observations in {scope}." : $"No observations in {scope} match \"{text.Trim()}\".");
+            return Text((text.Trim().Length == 0 ? $"No observations in {scope}." : $"No observations in {scope} match \"{text.Trim()}\".") + note);
         }
 
+        var how = outcome.Used switch
+        {
+            SearchMode.Hybrid => "by keyword and meaning",
+            SearchMode.Semantic => "by meaning",
+            _ => "by keyword",
+        };
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"{rows.Count} result(s) in {scope}{(text.Trim().Length > 0 ? $" for \"{text.Trim()}\"" : string.Empty)}, best first. get_observations returns full records.\n");
+        sb.Append(CultureInfo.InvariantCulture, $"{rows.Count} result(s) in {scope}{(text.Trim().Length > 0 ? $" for \"{text.Trim()}\"" : string.Empty)}, best first {how}{note}. get_observations returns full records.\n");
         foreach (var row in rows)
         {
             sb.Append(IndexRow(row, includeProject: all)).Append('\n');
@@ -173,10 +193,11 @@ internal static class MemoryEndpoints
         }
 
         var rows = store.Get(ids);
+        var notes = store.Notes([.. rows.Select(r => r.Id)]);
         var sb = new StringBuilder();
         foreach (var row in rows)
         {
-            sb.Append(FullRecord(row)).Append('\n');
+            sb.Append(FullRecord(row, notes.GetValueOrDefault(row.Id))).Append('\n');
         }
 
         var missing = ids.Except(rows.Select(r => r.Id)).ToList();
@@ -190,7 +211,7 @@ internal static class MemoryEndpoints
 
     private sealed record SaveRequest(string? Text, string? Title, string? Type, string[]? Files, string? Cwd);
 
-    private static async Task<IResult> SaveAsync(HttpContext http, WorkerContext context, MemoryStore store, ProjectResolver projects, CaptureStore capture, TimeProvider time)
+    private static async Task<IResult> SaveAsync(HttpContext http, WorkerContext context, MemoryStore store, ProjectResolver projects, CaptureStore capture, TimeProvider time, EmbeddingSignal embeddingSignal)
     {
         if (!Authorized(http, context))
         {
@@ -224,10 +245,42 @@ internal static class MemoryEndpoints
         var project = projects.Resolve(request.Cwd);
         var projectId = capture.GetOrCreateProject(project.Identity, project.Name, time.GetUtcNow());
         var id = store.Save(projectId, context.Platform, request.Cwd, project.Branch, new Observation(type, title, narrative, [], [.. (request.Files ?? []).Take(12)]));
+        embeddingSignal.Notify();
         return Text(string.Create(CultureInfo.InvariantCulture, $"Saved as #{id} ({type}) for this repository (project \"{project.Name}\")."));
     }
 
-    private static IResult Forget(HttpContext http, WorkerContext context, MemoryStore store)
+    /// <summary><c>engram save</c>: stores a note and queues its summary. JSON in, JSON out (<c>{"error": ...}</c> with 400).</summary>
+    private static async Task<IResult> NoteAsync(HttpContext http, WorkerContext context, NoteService notes)
+    {
+        if (!Authorized(http, context))
+        {
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+        }
+
+        using var buffer = new MemoryStream();
+        await http.Request.Body.CopyToAsync(buffer, http.RequestAborted).ConfigureAwait(false);
+        if (buffer.Length > HookEndpoints.MaxBodyBytes)
+        {
+            return Error("the request is too large");
+        }
+
+        NoteRequest request;
+        try
+        {
+            request = NoteRequest.Parse(buffer.ToArray());
+        }
+        catch (JsonException)
+        {
+            return Error("the request is not a JSON object");
+        }
+
+        var (saved, error) = notes.Save(request);
+        return saved is null ? Error(error ?? "the note could not be saved") : Results.Text(NoteService.ToJson(saved), "application/json", Encoding.UTF8);
+
+        static IResult Error(string message) => Results.Json(new Dictionary<string, string> { ["error"] = message }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    private static IResult Forget(HttpContext http, WorkerContext context, MemoryStore store, VectorIndex vectors)
     {
         if (!Authorized(http, context))
         {
@@ -239,6 +292,7 @@ internal static class MemoryEndpoints
             return Text("forget needs an observation id.", 400);
         }
 
+        vectors.Remove(id); // the row's vector goes with it (ON DELETE CASCADE)
         return store.Forget(id) ? Text($"Deleted #{id}.") : Text($"No observation #{id}.", 404);
     }
 
@@ -250,10 +304,14 @@ internal static class MemoryEndpoints
         return $"#{o.Id} {o.Type,-9} {Date(o.CreatedAt, "yyyy-MM-dd")}  {where}{OneLine(o.Title)}{fileText}";
     }
 
-    internal static string FullRecord(ObservationRow o)
+    /// <summary>One observation in full. For a saved note, also where it came from and its whole original text.</summary>
+    internal static string FullRecord(ObservationRow o, NoteRow? note = null)
     {
+        var origin = note is not null
+            ? $" | saved note{(note.Source is null ? string.Empty : " from " + note.Source)}{(note.SummarizedAt is null ? " (summary pending)" : string.Empty)}"
+            : o.Provider == "manual" ? " | saved on request" : string.Empty;
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"#{o.Id} {o.Type} | {Date(o.CreatedAt, "yyyy-MM-dd HH:mm")} | repo {o.Project ?? "?"}{(o.Branch is null ? string.Empty : " | branch " + o.Branch)}{(o.Provider == "manual" ? " | saved on request" : string.Empty)}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"#{o.Id} {o.Type} | {Date(o.CreatedAt, "yyyy-MM-dd HH:mm")} | repo {o.Project ?? "?"}{(o.Branch is null ? string.Empty : " | branch " + o.Branch)}{origin}\n");
         sb.Append(OneLine(o.Title)).Append('\n');
         sb.Append(o.Narrative.Trim()).Append('\n');
         var facts = Files(o.Facts);
@@ -266,6 +324,11 @@ internal static class MemoryEndpoints
         if (files.Count > 0)
         {
             sb.Append("Files: ").Append(string.Join(", ", files)).Append('\n');
+        }
+
+        if (note is not null)
+        {
+            sb.Append("Full note:\n").Append(note.Text.Trim()).Append('\n');
         }
 
         return sb.ToString();

@@ -33,7 +33,8 @@ internal sealed partial class JobRunner(
     WorkerContext context,
     JobSignal signal,
     TimeProvider time,
-    ILogger<JobRunner> logger) : BackgroundService
+    ILogger<JobRunner> logger,
+    Engram.Worker.Embedding.EmbeddingSignal? embeddingSignal = null) : BackgroundService
 {
     private static readonly TimeSpan IdlePoll = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BudgetWait = TimeSpan.FromSeconds(30);
@@ -101,12 +102,24 @@ internal sealed partial class JobRunner(
                     var turn = store.LoadTurn(job);
                     var observed = await observer.ObserveTurnAsync(turn, job.Id, cancellationToken).ConfigureAwait(false);
                     var saved = store.SaveObservations(job, observed.Observations, observed.Provider, observed.Model, [.. turn.Events.Select(e => e.Id)]);
+                    if (saved > 0)
+                    {
+                        embeddingSignal?.Notify();
+                    }
+
                     LogObserved(job.Id, saved, turn.Events.Count);
                     break;
                 case JobKinds.SummarizeCheckpoint or JobKinds.SummarizeSession:
                     var session = store.LoadSession(job.SessionId);
                     var summary = await observer.SummarizeAsync(session, job.Id, cancellationToken).ConfigureAwait(false);
                     store.SaveSummary(job, job.Kind == JobKinds.SummarizeSession ? "final" : "checkpoint", summary.Summary, summary.Provider, summary.Model);
+                    LogSummarized(job.Id, job.Kind);
+                    break;
+                case JobKinds.SummarizeNote:
+                    var note = store.LoadNote(job) ?? throw new NothingToObserveException("the note was deleted before it was summarized");
+                    var condensed = await observer.SummarizeNoteAsync(note, job.Id, cancellationToken).ConfigureAwait(false);
+                    store.SaveNoteSummary(job, note, condensed.Summary, condensed.Provider, condensed.Model);
+                    embeddingSignal?.Notify();
                     LogSummarized(job.Id, job.Kind);
                     break;
                 default:

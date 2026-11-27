@@ -73,6 +73,45 @@ internal static partial class TurnRenderer
         return text.Length <= maxChars ? text : PayloadShaper.Truncate(text, maxChars);
     }
 
+    /// <summary>A saved note: its metadata as attributes, the text as data. Over budget, the start and end are kept.</summary>
+    public static string RenderNote(NoteInput note, int maxChars, Redactor redactor)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+        ArgumentNullException.ThrowIfNull(redactor);
+        if (string.IsNullOrWhiteSpace(note.Text))
+        {
+            throw new NothingToObserveException("empty note");
+        }
+
+        var sb = new StringBuilder();
+        sb.Append("<note project=\"").Append(Attr(note.ProjectName)).Append('"');
+        if (note.Branch is not null)
+        {
+            sb.Append(" branch=\"").Append(Attr(note.Branch)).Append('"');
+        }
+
+        if (note.Source is not null)
+        {
+            sb.Append(" source=\"").Append(Attr(redactor.Redact(note.Source))).Append('"');
+        }
+
+        if (note.TypeGiven)
+        {
+            sb.Append(" type=\"").Append(Attr(note.Type)).Append('"');
+        }
+
+        if (note.TitleGiven)
+        {
+            sb.Append(" title=\"").Append(Attr(redactor.Redact(note.Title))).Append('"');
+        }
+
+        sb.AppendLine(">");
+        var budget = Math.Max(1000, maxChars - sb.Length - 16);
+        sb.AppendLine(Data(PayloadShaper.Truncate(note.Text, budget), redactor));
+        sb.Append("</note>");
+        return sb.ToString().ReplaceLineEndings("\n");
+    }
+
     private static string Build(TurnInput turn, int cap, Redactor redactor)
     {
         var sb = new StringBuilder();
@@ -136,6 +175,6 @@ internal static partial class TurnRenderer
 
     private static string Attr(string value) => value.Replace("\"", "'", StringComparison.Ordinal).Replace("<", string.Empty, StringComparison.Ordinal);
 
-    [GeneratedRegex(@"</(turn|user_prompt|tool_calls|assistant_final_answer|session|user_requests|observations)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"</(turn|user_prompt|tool_calls|assistant_final_answer|session|user_requests|observations|note)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DelimiterRegex();
 }

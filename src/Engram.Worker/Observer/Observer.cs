@@ -7,6 +7,8 @@ internal sealed record ObservedTurn(IReadOnlyList<Observation> Observations, str
 
 internal sealed record ObservedSummary(SessionSummary Summary, string Provider, string Model);
 
+internal sealed record ObservedNote(Observation Summary, string Provider, string Model);
+
 /// <summary>
 /// Turns a turn (or a session) into memory through a provider. Every provider call is logged. Invalid JSON
 /// gets one repair retry; after that the job fails and the runner decides whether to retry later.
@@ -25,6 +27,16 @@ internal sealed class Observer(ILlmClient client, ObserverStore store, ObserverS
         var user = TurnRenderer.RenderSession(session, settings.MaxInputChars, redactor);
         var (summary, model) = await CallAsync(Prompts.SummarizeSystem, user, jobId, text => OutputParser.ParseSummary(text), cancellationToken).ConfigureAwait(false);
         return new ObservedSummary(summary, client.Provider, model);
+    }
+
+    /// <summary>Saved notes (Council rulings) run long and their middle matters, so they get a bigger input budget than turns.</summary>
+    public const int NoteInputChars = 96_000;
+
+    public async Task<ObservedNote> SummarizeNoteAsync(NoteInput note, long jobId, CancellationToken cancellationToken)
+    {
+        var user = TurnRenderer.RenderNote(note, Math.Max(settings.MaxInputChars, NoteInputChars), redactor);
+        var (observations, model) = await CallAsync(Prompts.NoteSystem, user, jobId, OutputParser.ParseNote, cancellationToken).ConfigureAwait(false);
+        return new ObservedNote(observations, client.Provider, model);
     }
 
     private async Task<(T Value, string Model)> CallAsync<T>(string system, string user, long jobId, Func<string, (T? Value, string? Error)> parse, CancellationToken cancellationToken)

@@ -287,3 +287,38 @@ public sealed class DeriveTitleTests
         title.ShouldEndWith("word…");
     }
 }
+
+public sealed class KeywordQueryTests : IDisposable
+{
+    private readonly WorkerFactory _factory = new();
+    private readonly HttpClient _client;
+    private readonly string _cwd;
+
+    public KeywordQueryTests()
+    {
+        _client = _factory.CreateHookClient();
+        _cwd = _factory.Temp.Combine("chorus").Replace('\\', '/');
+        _factory.Execute("INSERT INTO projects (identity, name, created_at) VALUES (@identity, 'chorus', '2026-01-01')", new { identity = "dir:" + ProjectResolver.NormalizePath(_cwd) });
+        _factory.Execute("INSERT INTO sessions (id, project_id, platform, cwd, started_at, last_seen_at) VALUES ('s1', 1, 'windows', @cwd, '2026-01-01', '2026-01-01')", new { cwd = _cwd });
+        _factory.Execute("INSERT INTO observations (session_id, project_id, type, title, narrative, provider, model, created_at) VALUES ('s1', 1, 'decision', 'Telegram uses webhooks', 'Updates arrive by webhook.', 'f', 'm', '2026-11-01')");
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose();
+        _factory.Dispose();
+    }
+
+    private Task<string> SearchAsync(string q) =>
+        _client.GetStringAsync(new Uri($"/memory/search?q={Uri.EscapeDataString(q)}&cwd={Uri.EscapeDataString(_cwd)}", UriKind.Relative), TestContext.Current.CancellationToken);
+
+    [Theory]
+    [InlineData("how do we get it to us")]          // only stop words: no keyword match at all
+    [InlineData("how do push notifications reach us")] // "us" must not prefix-match "uses"
+    public async Task Question_words_do_not_match_everything(string question) =>
+        (await SearchAsync(question)).ShouldStartWith("No observations");
+
+    [Fact]
+    public async Task Real_words_in_a_question_still_match() =>
+        (await SearchAsync("why do we use webhooks?")).ShouldContain("#1 decision");
+}

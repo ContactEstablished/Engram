@@ -15,7 +15,7 @@ internal static class StatsEndpoint
 
     public static void MapStatsEndpoint(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/stats", (HttpContext http, WorkerContext context, Database database, TimeProvider time) =>
+        app.MapGet("/stats", (HttpContext http, WorkerContext context, Database database, TimeProvider time, Engram.Worker.Embedding.VectorIndex vectors, Engram.Worker.Embedding.EmbeddingService embeddings) =>
         {
             if (!WorkerToken.Matches(http.Request.Headers.Authorization, context.Token))
             {
@@ -55,6 +55,13 @@ internal static class StatsEndpoint
                     output_tokens_24h = calls.Out ?? 0,
                     cost_usd_24h = Math.Round(calls.Cost ?? 0, 4),
                 },
+                search = new
+                {
+                    semantic = context.Settings.Search.Semantic,
+                    model = context.Settings.Search.EmbeddingModel,
+                    vectors = vectors.Count,
+                    last_error = embeddings.LastError,
+                },
                 db_bytes = new FileInfo(database.Path).Length,
             });
         });
@@ -70,8 +77,9 @@ internal static class StatsEndpoint
             using var c = database.Open();
             var observations = c.Query(
                 """
-                SELECT o.id, o.type, o.title, o.narrative, o.facts, o.files, o.branch, o.created_at, p.name AS project
-                FROM observations o LEFT JOIN projects p ON p.id = o.project_id
+                SELECT o.id, o.type, o.title, o.narrative, o.facts, o.files, o.branch, o.created_at, p.name AS project,
+                       n.source AS source, CASE WHEN n.observation_id IS NULL THEN NULL WHEN n.summarized_at IS NULL THEN 'pending' ELSE 'done' END AS note
+                FROM observations o LEFT JOIN projects p ON p.id = o.project_id LEFT JOIN notes n ON n.observation_id = o.id
                 ORDER BY o.id DESC LIMIT @limit
                 """,
                 new { limit });

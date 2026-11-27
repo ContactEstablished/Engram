@@ -12,7 +12,7 @@ internal sealed record MigrationResult(int FromVersion, int ToVersion, string? B
 /// </summary>
 internal static class Migrations
 {
-    // v1 (Phase 1): capture tables. v2 (Phase 2): observations, FTS, summaries, LLM call log. Vectors arrive in Phase 4.
+    // v1 (Phase 1): capture tables. v2 (Phase 2): observations, FTS, summaries, LLM call log. v3 (Phase 4): vectors. v4 (0.5.0): notes.
     private static readonly (int Version, string Sql)[] All =
     [
         (1, """
@@ -156,6 +156,32 @@ internal static class Migrations
                 created_at         TEXT NOT NULL
             );
             CREATE INDEX ix_llm_calls_time ON llm_calls(created_at);
+            """),
+        (3, """
+            -- Phase 4: one embedding per observation (per model). Vectors are L2-normalized float32, little-endian.
+            CREATE TABLE observation_vectors (
+                observation_id INTEGER PRIMARY KEY REFERENCES observations(id) ON DELETE CASCADE,
+                model          TEXT NOT NULL,
+                dims           INTEGER NOT NULL,
+                vector         BLOB NOT NULL,
+                created_at     TEXT NOT NULL
+            );
+            CREATE INDEX ix_observation_vectors_model ON observation_vectors(model);
+            """),
+        (4, """
+            -- 0.5.0: notes saved with `engram save` (e.g. a Chorus Council ruling). The observation holds the summary
+            -- (what search and SessionStart use); this holds the full original text.
+            CREATE TABLE notes (
+                observation_id INTEGER PRIMARY KEY REFERENCES observations(id) ON DELETE CASCADE,
+                client_id      TEXT UNIQUE,          -- set by the CLI; a retried or re-spooled save is stored once
+                text           TEXT NOT NULL,        -- the whole note, redacted
+                source         TEXT,                 -- free text from --source, e.g. 'chorus-council run 42'
+                title_given    INTEGER NOT NULL,     -- 1: keep the caller's title; 0: the summary supplies it
+                type_given     INTEGER NOT NULL,     -- 1: keep the caller's type; 0: the summarizer picks it
+                summarized_at  TEXT,
+                created_at     TEXT NOT NULL
+            );
+            CREATE INDEX ix_notes_source ON notes(source);
             """),
     ];
 

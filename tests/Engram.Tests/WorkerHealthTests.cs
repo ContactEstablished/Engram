@@ -15,7 +15,7 @@ public sealed class WorkerHealthTests
         response.IsSuccessStatusCode.ShouldBeTrue();
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         body.ShouldContain("\"ok\"");
-        body.ShouldContain("\"schema\":2");
+        body.ShouldContain("\"schema\":4");
         File.Exists(Path.Combine(factory.Home, "engram.db")).ShouldBeTrue();
     }
 }

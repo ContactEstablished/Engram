@@ -1,16 +1,5 @@
 namespace Engram.Worker.Observer;
 
-internal static class ObservationTypes
-{
-    public static readonly string[] All = ["decision", "bugfix", "feature", "change", "discovery", "gotcha"];
-
-    public static string? Normalize(string? value)
-    {
-        var v = value?.Trim().ToLowerInvariant();
-        return v is not null && All.Contains(v) ? v : null;
-    }
-}
-
 /// <summary>One memory the observer extracted from a turn.</summary>
 internal sealed record Observation(string Type, string Title, string Narrative, IReadOnlyList<string> Facts, IReadOnlyList<string> Files);
 
@@ -53,3 +42,6 @@ internal sealed class LlmException(string message, TimeSpan? latency = null, Exc
 
 /// <summary>A job with nothing to work on (an empty turn). Completed without a provider call.</summary>
 internal sealed class NothingToObserveException(string message) : Exception(message);
+
+/// <summary>A saved note waiting for its summary (<c>engram save</c>).</summary>
+internal sealed record NoteInput(long ObservationId, string ProjectName, string? Branch, string Type, string Title, string Text, string? Source, bool TitleGiven, bool TypeGiven);

@@ -14,11 +14,18 @@ internal static class Program
         Usage:
           engram install [--yes] [--rotate-token] [--no-env]
                                                     Create ~/.engram, default settings and the worker token; export ENGRAM_TOKEN
-          engram status                             Show whether the worker is running and where things are
+          engram status [--json]                    Show whether the worker is running and where things are
+          engram enable [FOLDER...] [--worktrees] [--mcp local|file|none] [--dry-run] [--yes] [--json]
+                                                    Turn Engram on for projects (merges hooks into .claude/settings.local.json)
+          engram disable [FOLDER...]                Turn it off again (removes only Engram's entries)
+          engram state [FOLDER...] [--json]         Is Engram on for these folders, and are its hooks current? (read-only)
+          engram save --folder DIR [--title T] [--type T] [--source S] [--json]  < note.txt
+                                                    Save a note (e.g. a decision record) to a project's memory; summarized, full text kept
           engram recent [--limit N]                 Show the latest observations and session summaries
-          engram search WORDS [--all] [--type T] [--since 14d] [--limit N]
+          engram search WORDS [--all] [--keyword|--semantic] [--type T] [--since 14d] [--limit N]
                                                     Search memory of the current repo (or all repos)
           engram show ID...                         Full records for observations
+          engram eval FILE [--k 5]                  Retrieval eval: recall of keyword vs meaning vs hybrid search
           engram mcp                                MCP server (stdio) with search, timeline, get_observations, save_memory, forget
           engram worker start | stop                Start the worker in the background, or stop it
           engram hook session-start                 SessionStart hook handler (registers the session, starts the worker)
@@ -62,9 +69,15 @@ internal static class Program
             {
                 ["install", .. var rest] => InstallCommand.Run(rest),
                 ["status"] => StatusCommand.Run(Environment.GetEnvironmentVariable, Console.Out),
+                ["status", "--json"] => StatusCommand.RunJson(Environment.GetEnvironmentVariable, Console.Out),
                 ["recent", .. var recentArgs] => RecentCommand.Run(recentArgs, Environment.GetEnvironmentVariable, Console.Out),
+                ["save", .. var saveArgs] => SaveCommand.Run(saveArgs, Environment.GetEnvironmentVariable, Console.Out, Console.Error),
+                ["enable", .. var enableArgs] => EnableCommand.Run("enable", enableArgs, Environment.GetEnvironmentVariable, Console.Out, Console.Error, Console.In),
+                ["state", .. var stateArgs] => EnableCommand.Run("state", stateArgs, Environment.GetEnvironmentVariable, Console.Out, Console.Error, Console.In),
+                ["disable", .. var disableArgs] => EnableCommand.Run("disable", disableArgs, Environment.GetEnvironmentVariable, Console.Out, Console.Error, Console.In),
                 ["search", .. var searchArgs] => SearchCommand.Search(searchArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
                 ["show", .. var showArgs] => SearchCommand.Show(showArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
+                ["eval", .. var evalArgs] => EvalCommand.Run(evalArgs, new WorkerMemoryApi(Environment.GetEnvironmentVariable), McpCwd, Console.Out),
                 ["mcp"] => RunMcp(),
                 ["worker", "start"] => StatusCommand.StartWorker(Environment.GetEnvironmentVariable, Console.Out),
                 ["worker", "stop"] => StatusCommand.StopWorker(Environment.GetEnvironmentVariable, Console.Out),

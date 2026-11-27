@@ -18,12 +18,16 @@ internal sealed class WorkerFactory : WebApplicationFactory<Program>
 
     private readonly Engram.Worker.Observer.ILlmClient? _fakeClient;
 
-    /// <param name="settingsJson">Defaults to <c>observer.provider = none</c> so a test never launches the real claude.</param>
+    private readonly Engram.Worker.Embedding.IEmbeddingClient? _fakeEmbedder;
+
+    /// <param name="settingsJson">Defaults to <c>observer.provider = none</c> and <c>search.semantic = false</c>, so a test never launches the real claude or calls a real Ollama.</param>
     /// <param name="fakeClient">Replaces the summarizer provider (the observer then runs for real, against this fake).</param>
-    public WorkerFactory(string? settingsJson = null, Engram.Worker.Observer.ILlmClient? fakeClient = null)
+    /// <param name="fakeEmbedder">Replaces Ollama for embeddings (pass settings with search.semantic = true to use it).</param>
+    public WorkerFactory(string? settingsJson = null, Engram.Worker.Observer.ILlmClient? fakeClient = null, Engram.Worker.Embedding.IEmbeddingClient? fakeEmbedder = null)
     {
         _fakeClient = fakeClient;
-        File.WriteAllText(EngramPaths.SettingsFile(Home), settingsJson ?? """{ "observer": { "provider": "none" } }""");
+        _fakeEmbedder = fakeEmbedder;
+        File.WriteAllText(EngramPaths.SettingsFile(Home), settingsJson ?? """{ "observer": { "provider": "none" }, "search": { "semantic": false } }""");
 
         Token = WorkerToken.ReadOrCreate(Home);
     }
@@ -37,6 +41,15 @@ internal sealed class WorkerFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Engram:Home", Home);
+        if (_fakeEmbedder is { } embedder)
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<Engram.Worker.Embedding.IEmbeddingClient>();
+                services.AddSingleton(embedder);
+            });
+        }
+
         if (_fakeClient is { } fake)
         {
             builder.ConfigureServices(services =>
