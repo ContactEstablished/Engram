@@ -22,7 +22,7 @@ wsl.exe -d <distro> -e sh -c 'exec "$HOME/.local/bin/engram" "$@"' engram <comma
 
 ## `engram --version`
 
-Prints the bare version (`0.4.0`), exit 0.
+Prints the bare version (`0.5.0`), exit 0.
 
 ## `engram status --json`
 
